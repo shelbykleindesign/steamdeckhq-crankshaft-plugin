@@ -1,11 +1,11 @@
 name = "Steam Deck HQ Ratings"
-version = "0.2.0"
-link = "https://git.sr.ht/~avery/protondb-plugin"
-source = "https://git.sr.ht/~avery/protondb-plugin"
+version = "0.3.0"
+link = "https://github.com/shelbykleindesign/steamdeckhq-crankshaft-plugin"
+source = "https://github.com/shelbykleindesign/steamdeckhq-crankshaft-plugin"
 
 [author]
-name = "Shelby Klein Design"
-link = "https://shelbyklein.design"
+name = "SDHQ"
+link = "https://steamdeckhq.com"
 
 [entrypoints]
 
