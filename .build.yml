@@ -1,0 +1,20 @@
+image: archlinux
+packages:
+  - yarn
+sources:
+  - https://git.sr.ht/~avery/protondb-indicator
+artifacts:
+  - protondb-indicator.tar.gz
+tasks:
+  - setup: |
+      cd protondb-indicator
+      yarn install --frozen-lockfile
+  - build: |
+      cd protondb-indicator
+      yarn build
+  - create-artifact: |
+      tar \
+        --exclude 'node_modules' \
+        --exclude-vcs \
+        -czvf protondb-indicator.tar.gz \
+        protondb-indicator

@@ -1,0 +1,18 @@
+name = "Steam Deck HQ Ratings"
+version = "1.0"
+link = "https://git.sr.ht/~avery/protondb-plugin"
+source = "https://git.sr.ht/~avery/protondb-plugin"
+
+[author]
+name = "Shelby Klein Design"
+link = "https://shelbyklein.design"
+
+[entrypoints]
+
+	[entrypoints.desktop]
+	library = true
+	menu = false
+
+	[entrypoints.deck]
+	library = true
+	menu = false
