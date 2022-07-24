@@ -1,5 +1,5 @@
 name = "Steam Deck HQ Ratings"
-version = "1.0"
+version = "0.2.0"
 link = "https://git.sr.ht/~avery/protondb-plugin"
 source = "https://git.sr.ht/~avery/protondb-plugin"
 
