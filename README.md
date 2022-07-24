@@ -1,1 +1,1 @@
-# steamdeckhq-crankshaft-plugin
+# SDHQ Rating Indicator for Crankshaft Plugin Manager on Steam Deck
