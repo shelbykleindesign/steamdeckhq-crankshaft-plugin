@@ -1,0 +1,1 @@
+# steamdeckhq-crankshaft-plugin
