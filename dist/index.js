@@ -266,7 +266,7 @@ var load = (smm) => {
       "data-smm-sdhq": true
     }, /* @__PURE__ */ h("p", null, "SDHQ Rating:\xA0"), /* @__PURE__ */ h("img", {
       style: {
-        width: "70"
+        width: "70px"
       },
       src: starImage
     }));

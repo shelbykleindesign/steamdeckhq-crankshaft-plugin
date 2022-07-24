@@ -108,7 +108,7 @@ export const load = (smm: SMM) => {
         <p>SDHQ Rating:&nbsp;</p>
 
         <img style={{
-            width: '70'
+            width: '70px'
         }}
         src={starImage}/>
       </a>
