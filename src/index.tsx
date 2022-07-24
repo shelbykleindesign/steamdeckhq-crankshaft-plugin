@@ -92,14 +92,14 @@ export const load = (smm: SMM) => {
         href={data[0].link}
         style={{
           position: 'absolute',
-          top: 24,
-          left: 24,
+          bottom: 50,
+          right: 24,
           display: 'flex',
           alignItems: 'center',
           padding: '0px 20px',
           backgroundColor: 'rgba(0,0,0,80%)',
           color: 'rgba(255,255,255,100%)',
-          fontSize: 16,
+          fontSize: 12,
           textDecoration: 'none',
           borderRadius: 4,
         }}
@@ -108,8 +108,7 @@ export const load = (smm: SMM) => {
         <p>SDHQ Rating:&nbsp;</p>
 
         <img style={{
-            width: '100px'
-
+            width: '70'
         }}
         src={starImage}/>
       </a>
