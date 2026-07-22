@@ -12,8 +12,9 @@ This file orients Claude (and any human) working in this repo. Read it first.
 
 ## 1. What we're building (plain English)
 
-We run a store on **Shopify**. Our members live in **Sport:80** (a sports
-membership / event-management platform). We want the two to talk to each other
+We run the **USA Archery** store on **Shopify** (`shop.usarchery.org`). Our
+members live in **Sport:80** (a sports membership / event-management platform;
+our tenant is `usarchery.sport80.com`). We want the two to talk to each other
 so that:
 
 1. **SSO login** — a customer can sign in to our Shopify store using their
@@ -46,8 +47,8 @@ phased the way it is.
 | **Shopify has no "plugins" — it has "Apps."** | We are building a Shopify *App*. There is no plugin format. See Glossary. |
 | **Native "log in with your own provider" is Shopify Plus–only.** | Shopify's built-in external-identity-provider (IdP) login uses **OIDC** and requires the **Shopify Plus** plan. **Multipass** (the other native SSO shortcut) is also **Plus-only**. |
 | **Sport:80 SSO is SAML, not OIDC.** | Even on Plus, Sport:80's identity system speaks **SAML**, while Shopify's native customer-account IdP wants **OIDC**. That protocol gap means a **bridge/broker** is required — they don't connect directly. |
-| **Sport:80 has no fully public REST API.** | Sport:80 describes API work as "custom development." There is a community Python client (`euanwm/sport80_api`) that logs in and reads data, but we must **confirm the real login flow ourselves** before building on it. This is issue #1 (the "spike"). |
-| **Store plan is currently unknown.** | We design **plan-agnostically** and clearly label anything that needs Plus. Non-Plus stores get an app-based login/gating path instead of native SSO. |
+| **Sport:80 *does* expose a documented REST API for our org.** | USA Archery's tenant publishes API docs at **`https://usarchery.sport80.com/api/doc`** (Swagger/OpenAPI-style). The page is login-gated (automated fetches get 403), and access needs **credentials/API keys from Sport:80**. So Issue #1 (the "spike") is now: *get API access, read the doc, and confirm the auth scheme + the login and membership endpoints.* The community Python client (`euanwm/sport80_api`) is a useful reference, not a dependency. |
+| **We have a live store, so the plan is checkable.** | The store is `shop.usarchery.org`. Confirm its plan (Shopify admin → Settings → Plan) to pick the SSO branch. **Never develop against the live store** — build on a free development store, install on production only when ready. |
 
 ### Because of the above, the SSO story has two branches:
 - **If the store is Shopify Plus:** Shopify → our small **OIDC broker** → Sport:80.
@@ -91,9 +92,10 @@ Work top-to-bottom. Each phase is small and reviewable. GitHub issues track the
 detail; this is the map.
 
 - **Phase 0 — Foundations**
-  - Confirm the Sport:80 login/user API (the *spike*). ← **start here**
+  - Get Sport:80 API access + read `usarchery.sport80.com/api/doc`; confirm the
+    login/user endpoints and auth scheme (the *spike*). ← **start here**
   - Scaffold the Shopify Remix app + local dev.
-  - Confirm the store's Shopify plan.
+  - Confirm the store's Shopify plan (`shop.usarchery.org` → Settings → Plan).
 - **Phase 1 — The backbone: authenticate + sync + tag**
   - Sport:80 API client (login, fetch member/status).
   - Map a Sport:80 member → a Shopify customer (create/update via Admin API).

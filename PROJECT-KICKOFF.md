@@ -5,8 +5,11 @@ A single doc you can copy to your computer / new repo. It has two parts:
 - **Part A — The plan** (same content as `CLAUDE.md`: vision, constraints, stack, roadmap).
 - **Part B — The issues** (copy-paste-ready GitHub tickets, one per task).
 
+> **Store:** `shop.usarchery.org` (USA Archery, on Shopify).
+> **Sport:80 tenant:** `usarchery.sport80.com` — API docs at
+> `https://usarchery.sport80.com/api/doc` (login-gated).
 > **New repo:** this work is meant to move into a new dedicated repo
-> (working name: `usaw-store-bridge` — confirm exact spelling). Everything
+> (working name: `usarchery-store-bridge` — confirm exact spelling). Everything
 > below is portable text; paste it into the new repo when ready.
 
 ---
@@ -15,8 +18,9 @@ A single doc you can copy to your computer / new repo. It has two parts:
 
 ## What we're building (plain English)
 
-We run a store on **Shopify**. Our members live in **Sport:80** (sports
-membership / event platform — this is what USA Weightlifting uses). We want:
+We run the **USA Archery** store on **Shopify** (`shop.usarchery.org`). Our
+members live in **Sport:80** (sports membership / event platform; our tenant is
+`usarchery.sport80.com`). We want:
 
 1. **SSO login** — a customer signs in to Shopify with their **Sport:80
    username/password** instead of a separate account.
@@ -37,8 +41,8 @@ steps, comments that say *why*, and links to docs.
 | **Shopify has no "plugins" — only "Apps."** | We build a Shopify *App*. No plugin format exists. |
 | **Native "log in with your own provider" is Shopify Plus–only.** | Shopify's external-identity-provider (IdP) login uses **OIDC** and needs the **Plus** plan. **Multipass** (other native SSO shortcut) is also **Plus-only**. |
 | **Sport:80 SSO is SAML, not OIDC.** | Even on Plus, Sport:80 speaks **SAML** while Shopify's native login wants **OIDC** — a **bridge/broker** is required. |
-| **Sport:80 has no fully public REST API.** | Sport:80 calls API work "custom development." A community Python client (`euanwm/sport80_api`) logs in and reads data, but we must **confirm the real login flow ourselves** first (the spike, Issue 1). |
-| **Store plan is currently unknown.** | Design **plan-agnostically**; label anything needing Plus. |
+| **Sport:80 *does* expose a documented REST API for our org.** | Docs live at **`https://usarchery.sport80.com/api/doc`** (Swagger/OpenAPI-style, login-gated). Access needs **credentials/API keys from Sport:80**. The spike (Issue 1) is now: get access, read the doc, confirm the auth scheme + login/membership endpoints. `euanwm/sport80_api` is a reference, not a dependency. |
+| **We have a live store, so the plan is checkable.** | Store is `shop.usarchery.org`. Check its plan (admin → Settings → Plan). **Never build against the live store** — use a free dev store, install on production only when ready. |
 
 **SSO has two branches (decided later, once plan is known):**
 - **Shopify Plus:** Shopify → our small **OIDC broker** → Sport:80.
@@ -95,26 +99,29 @@ issue. Phase labels: `phase-0` … `phase-4`.
 
 ---
 
-### Issue 1 — [Spike] Confirm how Sport:80 login & member data actually work
-**Labels:** `phase-0`, `spike`, `blocked?`
+### Issue 1 — [Spike] Read the Sport:80 API and confirm login + member data
+**Labels:** `phase-0`, `spike`
 
 **Why:** Everything depends on how we authenticate against Sport:80 and read
-membership status. Sport:80 has no public REST API, so we must confirm the real
-flow before building.
+membership status. Good news: our tenant has a **documented REST API** at
+`https://usarchery.sport80.com/api/doc` — so this is about reading it and
+getting access, not discovering whether an API exists.
 
 **Tasks**
-- [ ] Contact Sport:80 / check the SSO docs; note whether integration needs a
-      scoped/paid "custom development" agreement.
-- [ ] Determine the login mechanism: username/password endpoint? token/session?
-      SAML SSO only? Base URL(s) (e.g. the USAW portal host).
-- [ ] Determine what member data we can read and the fields that indicate
+- [ ] Get API access from Sport:80 — request credentials / an API key for the
+      USA Archery tenant. (The doc page is login-gated.)
+- [ ] Open `https://usarchery.sport80.com/api/doc` and record the **auth scheme**
+      (Bearer token? API key header? login endpoint returning a token?).
+- [ ] Identify the **login / credential-verification** endpoint (path, method,
+      request/response) — this powers SSO.
+- [ ] Identify the **member / membership** endpoint(s) and the fields that prove
       **active membership** (status, expiry date, member ID, email, name).
-- [ ] Review the community client `github.com/euanwm/sport80_api` as a reference
-      (do not depend on it in production without validating).
-- [ ] Write findings into `CLAUDE.md` / a `docs/sport80.md`.
+- [ ] Note rate limits, sandbox/test data, and any terms of use.
+- [ ] Review `github.com/euanwm/sport80_api` as a reference implementation.
+- [ ] Write findings into `docs/sport80.md`.
 
 **Done when:** we can describe, in writing, exactly how to (a) verify a
-credential and (b) fetch membership status for a user.
+credential and (b) fetch membership status for a user — with real endpoint paths.
 
 ---
 
@@ -155,9 +162,9 @@ SSO branch (OIDC broker vs app-based login).
 **Depends on:** Issue 1
 
 **Tasks**
-- [ ] A small typed module: `verifyCredentials(user, pass)` and
-      `getMember(identifier)` returning normalized `{ memberId, email, name,
-      status, expiresAt }`.
+- [ ] A small typed module wrapping the `usarchery.sport80.com` API:
+      `verifyCredentials(user, pass)` and `getMember(identifier)` returning
+      normalized `{ memberId, email, name, status, expiresAt }`.
 - [ ] Handle auth/session/token lifecycle per Issue 1's findings.
 - [ ] Read secrets from env; never hardcode.
 - [ ] Unit tests with mocked responses.
