@@ -42,10 +42,12 @@ class KeyboardViewController: UIInputViewController {
     // MARK: - Views
 
     private var shiftButton: UIButton?
+    private var backspaceButton: UIButton?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         buildKeyboard()
+        addSwipeGestures()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -150,6 +152,7 @@ class KeyboardViewController: UIInputViewController {
 
     private func makeBackspaceKey() -> UIButton {
         let button = makeKeyBase()
+        backspaceButton = button
         button.backgroundColor = .secondarySystemBackground
         button.setTitle("⌫", for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 20, weight: .medium)
@@ -290,6 +293,73 @@ class KeyboardViewController: UIInputViewController {
         commitPending()
         textDocumentProxy.insertText("\n")
         UIDevice.current.playInputClick()
+    }
+
+    // MARK: - Swipe gestures
+
+    /// Left: delete word · right: space · up: shift · down: dismiss keyboard.
+    /// Swipes may start on any key except backspace (see gesture delegate) —
+    /// recognition cancels the underlying button touch, so a swipe never
+    /// also types.
+    private func addSwipeGestures() {
+        let gestures: [(UISwipeGestureRecognizer.Direction, Selector)] = [
+            (.left, #selector(swipedLeft)),
+            (.right, #selector(swipedRight)),
+            (.up, #selector(swipedUp)),
+            (.down, #selector(swipedDown)),
+        ]
+        for (direction, selector) in gestures {
+            let swipe = UISwipeGestureRecognizer(target: self, action: selector)
+            swipe.direction = direction
+            swipe.delegate = self
+            view.addGestureRecognizer(swipe)
+        }
+    }
+
+    @objc private func swipedLeft() { deleteWordBackward() }
+
+    @objc private func swipedRight() { spaceTapped() }
+
+    @objc private func swipedUp() { shiftTapped() }
+
+    @objc private func swipedDown() {
+        commitPending()
+        dismissKeyboard()
+    }
+
+    private func deleteWordBackward() {
+        // Mid multi-tap cycle: the swipe means "kill the word", and the
+        // provisional character is part of it.
+        cancelPending()
+        guard var context = textDocumentProxy.documentContextBeforeInput,
+              !context.isEmpty else {
+            textDocumentProxy.deleteBackward()
+            UIDevice.current.playInputClick()
+            return
+        }
+        var count = 0
+        while let last = context.last, last == " " || last == "\n" {
+            context.removeLast()
+            count += 1
+        }
+        while let last = context.last, last != " ", last != "\n" {
+            context.removeLast()
+            count += 1
+        }
+        for _ in 0..<max(count, 1) {
+            textDocumentProxy.deleteBackward()
+        }
+        UIDevice.current.playInputClick()
+    }
+}
+
+extension KeyboardViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        // Backspace acts on touch-down for instant hold-to-repeat, so it
+        // can't also be the start of a swipe.
+        guard let backspace = backspaceButton, let touched = touch.view else { return true }
+        return !touched.isDescendant(of: backspace)
     }
 }
 

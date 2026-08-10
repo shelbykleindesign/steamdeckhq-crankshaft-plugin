@@ -16,6 +16,9 @@ in two pieces:
      most implementations get wrong.
    - **Press and hold** auto-repeats the delete, accelerating after ~1.5s,
      just like the system keyboard.
+   - **Swipe gestures**, starting on any key except backspace:
+     left deletes a whole word (or kills the word being composed), right
+     inserts a space, up cycles shift, down picks the next candidate.
 
 2. **`ios/KeyboardViewController.swift`** — a complete, self-contained custom
    keyboard extension (multi-tap mode) implementing the same backspace model
@@ -44,6 +47,12 @@ never leaves the extension sandbox.
 - Backspace fires on `touchDown` (not `touchUpInside`) so holding it starts
   deleting immediately; repeat kicks in after 0.5s at 10 chars/s and
   accelerates to 20 chars/s.
+- Swipes: left = delete word, right = space, up = shift, down = next
+  candidate (prototype) / dismiss keyboard (Swift, which has no candidate
+  bar yet). In the prototype, taps resolve on pointer-up so a swipe never
+  also types; in Swift, `UISwipeGestureRecognizer` cancels the button touch
+  on recognition for the same effect. Backspace is excluded from swipe
+  starts on both, since it acts on touch-down.
 - The predictive dictionary in the prototype is a small embedded word list,
   ranked by frequency. The Swift port of predictive mode would reuse the same
   digit-sequence → prefix-trie approach; multi-tap ships first because it

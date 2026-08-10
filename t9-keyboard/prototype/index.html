@@ -196,6 +196,25 @@
   .key.mode { font-size: 0.85rem; font-weight: 600; }
   .key.mode .modelabel { color: var(--accent); }
 
+  .toast {
+    position: fixed;
+    top: 16%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: var(--ground);
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .toast.show { opacity: 0.92; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
   footer {
     border-top: 1px solid var(--line);
     padding-top: 10px;
@@ -229,8 +248,14 @@
     in T9 mode it pops a digit so the word candidate updates before any
     committed text is touched; press and hold to auto-repeat, accelerating
     after ~1.5 s.
+    <br>
+    <strong>Swipes</strong> (start on any key except ⌫): left deletes a whole
+    word, right inserts a space, up cycles shift, down picks the next
+    candidate.
   </footer>
 </div>
+
+<div class="toast" id="toast" aria-live="polite"></div>
 
 <script>
   // ---- Dictionary (frequency-ordered) ----------------------------------
@@ -455,6 +480,65 @@
     bsTimeout = bsInterval = null;
   }
 
+  // ---- Swipe gestures ---------------------------------------------------
+  const SWIPE_DIST = 45;
+  const toastEl = document.getElementById("toast");
+  let toastTimer = null;
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 700);
+  }
+
+  function gestureDeleteWord() {
+    if (pendingKey !== null) {
+      clearTimeout(commitTimer);
+      pendingKey = null;
+      pendingIdx = 0;
+    } else if (seq) {
+      seq = "";
+      candidates = [];
+      candIdx = 0;
+    } else {
+      committed = committed.replace(/[ \n]+$/, "").replace(/[^ \n]+$/, "");
+    }
+    toast("⌫ word");
+    render();
+  }
+
+  function gestureSpace() {
+    pressSpace();
+    toast("space");
+  }
+
+  function gestureShift() {
+    pressShift();
+    toast(["shift off", "Shift", "CAPS LOCK"][shift]);
+  }
+
+  function gestureNextCandidate() {
+    if (mode === "t9" && seq && candidates.length > 1) {
+      candIdx = (candIdx + 1) % Math.min(candidates.length, 8);
+      toast("next: " + applyShiftWord(candidates[candIdx]));
+    } else if (pendingKey !== null) {
+      commitMultitap();
+      toast("commit");
+    } else {
+      return;
+    }
+    render();
+  }
+
+  function doSwipe(dx, dy) {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (dx > 0) gestureSpace(); else gestureDeleteWord();
+    } else {
+      if (dy > 0) gestureNextCandidate(); else gestureShift();
+    }
+  }
+
   // ---- Other keys -------------------------------------------------------
   function pressDigit(digit) {
     if (mode === "multitap") multitapPress(digit);
@@ -492,7 +576,39 @@
   // ---- Build the keypad -------------------------------------------------
   const keypad = document.getElementById("keypad");
 
-  function makeKey({ label, sub, cls, onDown, onUp }) {
+  // Taps resolve on release so a swipe starting on a key never also types.
+  // Backspace is the exception: it fires on press so hold-to-repeat feels
+  // instant, and therefore never starts a swipe.
+  function attachTapOrSwipe(b, onTap) {
+    let start = null;
+    b.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      b.setPointerCapture(e.pointerId);
+      b.classList.add("held");
+      start = { x: e.clientX, y: e.clientY, swiped: false };
+    });
+    b.addEventListener("pointermove", (e) => {
+      if (!start || start.swiped) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      if (Math.hypot(dx, dy) >= SWIPE_DIST) {
+        start.swiped = true;
+        b.classList.remove("held");
+        doSwipe(dx, dy);
+      }
+    });
+    b.addEventListener("pointerup", () => {
+      b.classList.remove("held");
+      if (start && !start.swiped) onTap();
+      start = null;
+    });
+    b.addEventListener("pointercancel", () => {
+      b.classList.remove("held");
+      start = null;
+    });
+    b.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  function makeKey({ label, sub, cls, onTap, onDown, onUp }) {
     const b = document.createElement("button");
     b.className = "key" + (cls ? " " + cls : "");
     const d = document.createElement("span");
@@ -505,33 +621,35 @@
       s.textContent = sub;
       b.appendChild(s);
     }
-    b.addEventListener("pointerdown", (e) => { e.preventDefault(); onDown(b); });
-    if (onUp) {
+    if (onTap) {
+      attachTapOrSwipe(b, onTap);
+    } else {
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); onDown(b); });
       for (const ev of ["pointerup", "pointerleave", "pointercancel"])
         b.addEventListener(ev, () => onUp(b));
+      b.addEventListener("contextmenu", (e) => e.preventDefault());
     }
-    b.addEventListener("contextmenu", (e) => e.preventDefault());
     return b;
   }
 
   for (const digit of ["1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
     keypad.appendChild(makeKey({
       label: digit,
-      sub: digit === "1" ? KEYS[digit] : KEYS[digit],
-      onDown: () => pressDigit(digit),
+      sub: KEYS[digit],
+      onTap: () => pressDigit(digit),
     }));
   }
-  const shiftKey = makeKey({ label: "⇧", sub: "shift", cls: "special", onDown: pressShift });
+  const shiftKey = makeKey({ label: "⇧", sub: "shift", cls: "special", onTap: pressShift });
   shiftKey.id = "shiftKey";
   keypad.appendChild(shiftKey);
-  keypad.appendChild(makeKey({ label: "0", sub: "space", cls: "special", onDown: pressSpace }));
+  keypad.appendChild(makeKey({ label: "0", sub: "space", cls: "special", onTap: pressSpace }));
   keypad.appendChild(makeKey({
     label: "⌫", sub: "hold to repeat", cls: "special",
     onDown: backspaceDown, onUp: backspaceUp,
   }));
 
-  document.getElementById("modeKey").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleMode(); });
-  document.getElementById("returnKey").addEventListener("pointerdown", (e) => { e.preventDefault(); pressReturn(); });
+  attachTapOrSwipe(document.getElementById("modeKey"), toggleMode);
+  attachTapOrSwipe(document.getElementById("returnKey"), pressReturn);
 
   render();
 </script>
