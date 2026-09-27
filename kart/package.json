@@ -12,7 +12,7 @@
     "track": "node tools/track-report.mjs",
     "peer-server": "peerjs --port 9000 --host 0.0.0.0",
     "test:e2e": "node test/e2e/tilt.mjs && node test/e2e/online.mjs",
-    "format": "prettier --write \"src/**/*.js\" \"test/**/*.mjs\" \"tools/*.mjs\" build.mjs docs/style.css docs/index.html"
+    "format": "prettier --write \"src/**/*.js\" \"test/**/*.mjs\" \"tools/*.mjs\" build.mjs public/style.css public/index.html"
   },
   "dependencies": {
     "peerjs": "1.5.5",

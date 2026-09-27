@@ -1,6 +1,6 @@
 // End-to-end check of online play: two browser pages pair with a code, race,
 // finish, rematch, and one leaves. Needs:
-//   npm run build && npx http-server docs -p 8080   (static files)
+//   npm run build && npx http-server public -p 8080   (static files)
 //   npm run peer-server                                (local signaling on :9000)
 //   node test/e2e/online.mjs
 import assert from 'node:assert/strict';

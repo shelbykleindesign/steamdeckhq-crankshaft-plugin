@@ -4,7 +4,7 @@
 //   - the horizon, as projected by the live camera, counter-rotates by the
 //     device angle, i.e. it stays level with the real world
 //   - the camera never pitches
-// Needs `npx http-server docs -p 8080` running.   node test/e2e/tilt.mjs
+// Needs `npx http-server public -p 8080` running.   node test/e2e/tilt.mjs
 import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright';
 

@@ -1,7 +1,7 @@
-// Bundles src/ into docs/game.js. docs/ is the live site: GitHub Pages serves
-// it at the domain in docs/CNAME, so the built bundle is committed.
+// Bundles src/ into public/game.js. public/ is the whole site (the Beelink
+// serves it via serve/), so the built bundle is committed.
 //   npm run build        production bundle (+ third-party license notices)
-//   npm run dev          rebuild on change + serve docs/ on :8080
+//   npm run dev          rebuild on change + serve public/ on :8080
 import * as esbuild from 'esbuild';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -16,14 +16,14 @@ const ctx = await esbuild.context({
   minify: !serve,
   sourcemap: serve ? 'inline' : false,
   metafile: true,
-  outfile: 'docs/game.js',
+  outfile: 'public/game.js',
   logLevel: 'info',
 });
 
 if (serve) {
   await ctx.watch();
-  const { port } = await ctx.serve({ servedir: 'docs', port: 8080, host: '0.0.0.0' });
-  console.log(`Serving docs/ on http://localhost:${port}`);
+  const { port } = await ctx.serve({ servedir: 'public', port: 8080, host: '0.0.0.0' });
+  console.log(`Serving public/ on http://localhost:${port}`);
   console.log('Motion sensors need HTTPS on iPad: tunnel this port or deploy (see README).');
 } else {
   const result = await ctx.rebuild();
@@ -48,7 +48,7 @@ function writeNotices(metafile) {
   });
   const rule = `\n\n${'-'.repeat(72)}\n\n`;
   writeFileSync(
-    'docs/third-party-licenses.txt',
+    'public/third-party-licenses.txt',
     `Tilt Kart bundles the following open-source packages in game.js.${rule}${sections.join(rule)}\n`,
   );
 }

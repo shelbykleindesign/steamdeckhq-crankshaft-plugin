@@ -4,7 +4,7 @@ A first-person kart racer for iPad. Hold the iPad like a steering wheel and turn
 
 Race a CPU rival solo, or race another person online: one device hosts and shows a four-letter code, the other types it in.
 
-Live at **<https://moto.shelbyklein.com>**. `docs/` is the site itself: plain static files with the built bundle committed, served by GitHub Pages at the domain in `docs/CNAME`. Pushing to `main` deploys.
+Live at **<https://moto.shelbyklein.com>**, served from the Beelink. `public/` is the whole site: plain static files, with the built bundle committed. `serve/` runs it.
 
 ## Controls
 
@@ -25,24 +25,31 @@ Yellow chevron pads give a boost. Grass slows you down.
 - **Share → Add to Home Screen** runs it full screen with no Safari toolbars.
 - Settings has a live steering meter, a sensitivity slider ("full lock at N°" of rotation, default 28°), a *Level horizon* toggle, and a *Set current hold as centre* button for players who naturally hold the iPad slightly turned.
 
-## Hosting
+## Hosting (Beelink)
 
-Safari only gives motion-sensor access to pages served over **HTTPS**, and asks for permission the first time you tap a race button. GitHub Pages provides the HTTPS.
+Safari only gives motion-sensor access to pages served over **HTTPS**. On the Beelink, nginx serves `public/` on `127.0.0.1:8088`, and a Cloudflare Tunnel publishes it at `moto.shelbyklein.com`. Cloudflare supplies the HTTPS certificate, and nothing is opened on the router.
 
-One-time setup:
+```sh
+cd serve
+docker compose up -d
+curl -sI http://127.0.0.1:8088/game.js     # 200, Content-Type: application/javascript
+```
 
-1. **GitHub:** repo Settings → Pages → *Deploy from a branch* → `main`, folder `/docs` → Save. The `docs/CNAME` file fills in the custom domain.
-2. **Cloudflare DNS** for shelbyklein.com: add a `CNAME` record, name `moto`, target `shelbykleindesign.github.io`, proxy status **DNS only** (grey cloud), so GitHub can issue the certificate.
-3. Back in Settings → Pages, once the DNS check passes and the certificate is issued (minutes, occasionally up to an hour), tick **Enforce HTTPS**.
+Then point the domain at it in Cloudflare (Zero Trust → Networks → Tunnels). Cloudflare creates the `moto` DNS record itself.
 
-After that, `npm run build`, commit and push to `main`. Pages redeploys in about a minute.
+- **A tunnel already runs on the Beelink:** open it → Public Hostname → Add. Subdomain `moto`, domain `shelbyklein.com`, service `HTTP` `localhost:8088`.
+- **No tunnel yet:** Create a tunnel → Cloudflared, and copy the token from the install command into `serve/.env` (see `serve/.env.example`). Run `docker compose --profile tunnel up -d`, then add the public hostname with service `HTTP` `web:80`.
 
-To try changes on a real iPad before pushing, tunnel the dev server to get an HTTPS URL:
+Without Docker, any static server works if it serves `public/` with `.js` as JavaScript. `serve/nginx.conf` is a plain server block you can drop into a host nginx; change `root` to the `public/` path.
+
+**Updating:** `git pull`. nginx reads straight from `public/`, and `Cache-Control: no-cache` makes browsers and Cloudflare pick up the new files on the next load.
+
+To try changes on a real iPad before pulling them onto the Beelink, tunnel the dev server to get a temporary HTTPS URL:
 
 ```sh
 npm install
-npm run dev                                         # rebuilds on save, serves docs/ on :8080
-npx localtunnel --port 8080                         # or: cloudflared tunnel --url http://localhost:8080
+npm run dev                                         # rebuilds on save, serves public/ on :8080
+cloudflared tunnel --url http://localhost:8080      # or: npx localtunnel --port 8080
 ```
 
 ## Online play
@@ -64,7 +71,7 @@ Then open the game on both devices with `?peerhost=<server-ip>&peerport=9000&pee
 ```sh
 npm install
 npm run dev          # watch + serve on :8080
-npm run build        # production bundle -> docs/game.js (commit it)
+npm run build        # production bundle -> public/game.js (commit it)
 npm test             # unit tests: steering math, track geometry, physics, laps
 npm run track        # circuit stats (length, tightest corner, clearances)
 ```
@@ -72,7 +79,7 @@ npm run track        # circuit stats (length, tightest corner, clearances)
 Browser tests (Playwright; run `npx playwright install chromium` once):
 
 ```sh
-npx http-server docs -p 8080 &       # serve the built game
+npx http-server public -p 8080 &     # serve the built game
 npm run peer-server &                # local signaling server for the online test
 npm run test:e2e
 ```
@@ -113,4 +120,4 @@ iOS reports gravity with the opposite sign to the W3C spec (and to Android). The
 - Online play depends on the public PeerJS server unless you self-host it (above).
 - The iPad itself has no vibration API, so there is no haptic feedback.
 
-Third-party code bundled into `docs/game.js` (three.js, PeerJS and their dependencies) is listed with its licenses in `docs/third-party-licenses.txt`, regenerated on every build.
+Third-party code bundled into `public/game.js` (three.js, PeerJS and their dependencies) is listed with its licenses in `public/third-party-licenses.txt`, regenerated on every build.
