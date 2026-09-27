@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const svg = readFileSync(new URL('../public/icons/icon.svg', import.meta.url), 'utf8');
+const svg = readFileSync(new URL('../docs/icons/icon.svg', import.meta.url), 'utf8');
 // iOS and Android apply their own corner mask, so the PNGs are full-bleed squares.
 const square = svg.replace(/<rect width="512" height="512" rx="112"/, '<rect width="512" height="512"');
 const browser = await chromium.launch();
@@ -13,6 +13,6 @@ for (const size of [180, 192, 512]) {
   await page.setContent(
     `<style>html,body{margin:0}svg{display:block;width:${size}px;height:${size}px}</style>${square}`,
   );
-  await page.screenshot({ path: new URL(`../public/icons/icon-${size}.png`, import.meta.url).pathname });
+  await page.screenshot({ path: new URL(`../docs/icons/icon-${size}.png`, import.meta.url).pathname });
 }
 await browser.close();

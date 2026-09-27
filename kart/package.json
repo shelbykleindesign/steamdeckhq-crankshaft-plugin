@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "First-person kart racer for iPad. Turn the iPad to steer; the horizon stays level. Online 2-player with a pairing code.",
-  "license": "GPL-3.0",
+  "description": "First-person iPad kart racer. Turn the iPad to steer; the horizon stays level. Online 2-player with a pairing code. Live at moto.shelbyklein.com.",
+  "license": "UNLICENSED",
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --serve",
@@ -12,7 +12,7 @@
     "track": "node tools/track-report.mjs",
     "peer-server": "peerjs --port 9000 --host 0.0.0.0",
     "test:e2e": "node test/e2e/tilt.mjs && node test/e2e/online.mjs",
-    "format": "prettier --write \"src/**/*.js\" \"test/**/*.mjs\" \"tools/*.mjs\" build.mjs public/style.css public/index.html"
+    "format": "prettier --write \"src/**/*.js\" \"test/**/*.mjs\" \"tools/*.mjs\" build.mjs docs/style.css docs/index.html"
   },
   "dependencies": {
     "peerjs": "1.5.5",
