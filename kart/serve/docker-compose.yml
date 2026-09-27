@@ -1,26 +1,23 @@
-# Serves ../public at http://127.0.0.1:8088 on this machine.
-#   docker compose up -d                      nginx only (use an existing tunnel)
-#   docker compose --profile tunnel up -d     nginx + a new Cloudflare Tunnel (token in .env)
-# Updating the game is `git pull`: nginx reads the files straight from ../public.
+# Tilt Kart on the Beelink: nginx serves ../public, and cloudflared connects the
+# dedicated 'moto' Cloudflare Tunnel, which routes moto.shelbyklein.com to
+# http://web:80 on this compose network. Start or update with ./up.sh.
 name: tilt-kart
 
 services:
   web:
     image: nginx:stable-alpine
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:8088:80'
     volumes:
       - ../public:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    # No host port needed: the tunnel reaches nginx inside Docker. To browse it
+    # from the host as well, add:  ports: ['127.0.0.1:8088:80']
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    profiles: ['tunnel']
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      # From serve/.env; interpolated even when this profile is off, so no `:?` here.
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?run ./up.sh, or put the moto tunnel token in serve/.env}
     depends_on:
       - web

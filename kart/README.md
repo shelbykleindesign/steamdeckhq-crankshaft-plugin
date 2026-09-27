@@ -1,6 +1,6 @@
 # Tilt Kart
 
-A first-person kart racer for iPad. Hold the iPad like a steering wheel and turn it to steer. The view counter-rotates against the turn, so the horizon stays level with the real ground and the on-screen steering wheel stays glued to the glass: the iPad *is* the wheel. The camera never pitches, so the view always looks straight ahead, parallel to the track.
+A first-person kart racer for iPad. Hold the iPad like a steering wheel and turn it to steer. The view counter-rotates against the turn, so the horizon stays level with the real ground and the on-screen steering wheel stays glued to the glass: the iPad _is_ the wheel. The camera never pitches, so the view always looks straight ahead, parallel to the track.
 
 Race a CPU rival solo, or race another person online: one device hosts and shows a four-letter code, the other types it in.
 
@@ -8,43 +8,39 @@ Live at **<https://moto.shelbyklein.com>**, served from the Beelink. `public/` i
 
 ## Controls
 
-| Action | iPad | Keyboard (desktop testing) |
-| --- | --- | --- |
-| Steer | Turn the iPad like a wheel | ← → or A D |
-| Accelerate | Automatic | Automatic |
-| Brake / reverse | Hold left thumb on the screen | ↓ or S |
-| Drift | Hold right thumb while turning; let go for a mini-turbo (sparks: blue → orange → pink) | Space or Shift |
-| Pause / recentre steering | ❚❚ button, top left | – |
+| Action                    | iPad                                                                                   | Keyboard (desktop testing) |
+| ------------------------- | -------------------------------------------------------------------------------------- | -------------------------- |
+| Steer                     | Turn the iPad like a wheel                                                             | ← → or A D                 |
+| Accelerate                | Automatic                                                                              | Automatic                  |
+| Brake / reverse           | Hold left thumb on the screen                                                          | ↓ or S                     |
+| Drift                     | Hold right thumb while turning; let go for a mini-turbo (sparks: blue → orange → pink) | Space or Shift             |
+| Pause / recentre steering | ❚❚ button, top left                                                                    | –                          |
 
 Lap count (1, 3 or 5) is in Settings, and in the lobby when hosting.
 
 Yellow chevron pads give a boost. Grass slows you down.
 
 **Tips for iPad**
+
 - Turn on **Rotation Lock** in Control Center. On iPad it locks whichever orientation you're holding, so a hard turn can't flip the screen to portrait. The game also survives an accidental auto-rotate mid-race, because steering is measured against the orientation you started the race in.
 - **Share → Add to Home Screen** runs it full screen with no Safari toolbars.
-- Settings has a live steering meter, a sensitivity slider ("full lock at N°" of rotation, default 28°), a *Level horizon* toggle, and a *Set current hold as centre* button for players who naturally hold the iPad slightly turned.
+- Settings has a live steering meter, a sensitivity slider ("full lock at N°" of rotation, default 28°), a _Level horizon_ toggle, and a _Set current hold as centre_ button for players who naturally hold the iPad slightly turned.
 
 ## Hosting (Beelink)
 
-Safari only gives motion-sensor access to pages served over **HTTPS**. On the Beelink, nginx serves `public/` on `127.0.0.1:8088`, and a Cloudflare Tunnel publishes it at `moto.shelbyklein.com`. Cloudflare supplies the HTTPS certificate, and nothing is opened on the router.
+Safari only gives motion-sensor access to pages served over **HTTPS**. On the Beelink, `serve/docker-compose.yml` runs nginx for `public/` next to `cloudflared`, which connects the dedicated `moto` Cloudflare Tunnel. That tunnel routes `moto.shelbyklein.com` to `http://web:80` on the compose network. Cloudflare supplies the certificate, and nothing is exposed on the router or the host.
+
+Over SSH, one line clones the game (first time) and starts or updates everything:
 
 ```sh
-cd serve
-docker compose up -d
-curl -sI http://127.0.0.1:8088/game.js     # 200, Content-Type: application/javascript
+git clone -q --depth 1 -b claude/kart-accelerometer-steering-yry610 https://github.com/shelbykleindesign/steamdeckhq-crankshaft-plugin ~/tilt-kart 2>/dev/null; ~/tilt-kart/kart/serve/up.sh
 ```
 
-Then point the domain at it in Cloudflare (Zero Trust → Networks → Tunnels). Cloudflare creates the `moto` DNS record itself.
+`up.sh` pulls the latest files, fetches the tunnel token with this machine's `cloudflared` login into `serve/.env` (mode 600) the first time, and runs `docker compose up -d`. If `cloudflared` isn't logged in, it says how to fix that. Re-run it to deploy updates. nginx sends `Cache-Control: no-cache`, so browsers and Cloudflare pick up new files on the next load.
 
-- **A tunnel already runs on the Beelink:** open it → Public Hostname → Add. Subdomain `moto`, domain `shelbyklein.com`, service `HTTP` `localhost:8088`.
-- **No tunnel yet:** Create a tunnel → Cloudflared, and copy the token from the install command into `serve/.env` (see `serve/.env.example`). Run `docker compose --profile tunnel up -d`, then add the public hostname with service `HTTP` `web:80`.
+The tunnel, its route and the DNS record live in Cloudflare (Zero Trust → Networks → Tunnels → `moto`), so nothing about the domain is configured on the Beelink.
 
-Without Docker, any static server works if it serves `public/` with `.js` as JavaScript. `serve/nginx.conf` is a plain server block you can drop into a host nginx; change `root` to the `public/` path.
-
-**Updating:** `git pull`. nginx reads straight from `public/`, and `Cache-Control: no-cache` makes browsers and Cloudflare pick up the new files on the next load.
-
-To try changes on a real iPad before pulling them onto the Beelink, tunnel the dev server to get a temporary HTTPS URL:
+To try changes on a real iPad before deploying, tunnel the dev server to get a temporary HTTPS URL:
 
 ```sh
 npm install
@@ -84,25 +80,26 @@ npm run peer-server &                # local signaling server for the online tes
 npm run test:e2e
 ```
 
-- `test/e2e/tilt.mjs` feeds real `devicemotion` events to an emulated landscape iPad, using both the iOS and the spec gravity sign. It checks that a clockwise turn steers right, and that the horizon the camera projects counter-rotates by exactly the device angle. With *Level horizon* off, it checks the view stays screen-aligned.
+- `test/e2e/tilt.mjs` feeds real `devicemotion` events to an emulated landscape iPad, using both the iOS and the spec gravity sign. It checks that a clockwise turn steers right, and that the horizon the camera projects counter-rotates by exactly the device angle. With _Level horizon_ off, it checks the view stays screen-aligned.
 - `test/e2e/online.mjs` pairs two browsers with a code, rejects a wrong code, and checks the green light fires at the same moment on both. The two karts then race to the finish, both devices must show the same results, a rematch must carry state again, and the host must be told when the guest quits.
 
 URL flags:
-- `?sim`: the arrow keys rotate a *virtual* iPad, driving the same steering and horizon-lock path as the real sensor. Use it to see the effect on a desktop.
+
+- `?sim`: the arrow keys rotate a _virtual_ iPad, driving the same steering and horizon-lock path as the real sensor. Use it to see the effect on a desktop.
 - `?debug`: live readout of frame rate, sensor angles, the detected gravity sign and network round-trip.
 
 ### Where things live
 
-| File | What it does |
-| --- | --- |
-| `src/tilt.js` | Accelerometer → device roll; steering curve; iOS permission and sign handling |
-| `src/view.js` | Renderer and cameras. First-person camera: pitch 0, roll = −device roll |
-| `src/kart.js` | Arcade physics: grip and slide, drift and mini-turbo, walls, boost pads |
-| `src/track.js` | The circuit (a closed spline) and track-relative queries |
-| `src/world.js` / `src/kart-model.js` | Procedural environment and kart meshes (no image assets) |
-| `src/net.js` | Pairing codes, WebRTC link, clock sync, heartbeat |
-| `src/main.js` | Screens, race flow, snapshot interpolation, results |
-| `src/config.js` | All tuning numbers: speeds, grip, steering, camera, network rates |
+| File                                 | What it does                                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
+| `src/tilt.js`                        | Accelerometer → device roll; steering curve; iOS permission and sign handling |
+| `src/view.js`                        | Renderer and cameras. First-person camera: pitch 0, roll = −device roll       |
+| `src/kart.js`                        | Arcade physics: grip and slide, drift and mini-turbo, walls, boost pads       |
+| `src/track.js`                       | The circuit (a closed spline) and track-relative queries                      |
+| `src/world.js` / `src/kart-model.js` | Procedural environment and kart meshes (no image assets)                      |
+| `src/net.js`                         | Pairing codes, WebRTC link, clock sync, heartbeat                             |
+| `src/main.js`                        | Screens, race flow, snapshot interpolation, results                           |
+| `src/config.js`                      | All tuning numbers: speeds, grip, steering, camera, network rates             |
 
 ### How the steering works
 
