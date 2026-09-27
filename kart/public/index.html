@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Tilt Kart" />
+    <meta name="theme-color" content="#0e1116" />
+    <meta
+      name="description"
+      content="A first-person kart racer for iPad. Turn the iPad to steer; the horizon stays level."
+    />
+    <title>Tilt Kart</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon-180.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-screen="title">
+    <canvas id="scene" aria-label="Race view"></canvas>
+
+    <!-- Title -->
+    <section class="screen" id="screen-title">
+      <div class="panel title-panel">
+        <h1 class="logo" aria-label="Tilt Kart"><span class="tilt">TILT</span><span class="kart">KART</span></h1>
+        <p class="tagline">Turn the iPad to steer. The horizon stays level.</p>
+        <nav class="menu">
+          <button class="btn primary" data-action="solo">Race the CPU</button>
+          <button class="btn" data-action="host">Host online race</button>
+          <button class="btn" data-action="join">Join with a code</button>
+        </nav>
+        <div class="menu-row">
+          <button class="btn ghost small" data-action="settings">Settings</button>
+          <button class="btn ghost small" data-action="howto">How to play</button>
+        </div>
+        <p class="hint touch-only">
+          Hold the iPad like a steering wheel. Turn on Rotation Lock in Control Center so turning hard can’t flip the
+          screen.
+        </p>
+        <p class="hint desktop-only">No motion sensor here: steer with ← →, drift with Space, brake with ↓.</p>
+      </div>
+    </section>
+
+    <!-- Host lobby -->
+    <section class="screen" id="screen-host">
+      <div class="panel center-panel">
+        <p class="eyebrow">Online · Host</p>
+        <h2>Share this code</h2>
+        <div class="code" id="host-code" aria-live="polite"></div>
+        <p class="muted">On the other device, tap <b>Join with a code</b> and enter these four letters.</p>
+        <p class="status" id="host-status" aria-live="polite"><i></i><span></span></p>
+        <div class="versus" id="host-versus"></div>
+        <div class="laps" role="group" aria-label="Laps">
+          <span>Laps</span>
+          <button type="button" data-laps="1">1</button>
+          <button type="button" data-laps="3">3</button>
+          <button type="button" data-laps="5">5</button>
+        </div>
+        <div class="menu-row">
+          <button class="btn primary" id="btn-host-start" data-action="host-start" disabled>Start race</button>
+          <button class="btn primary" id="btn-host-retry" data-action="host" hidden>Try again</button>
+          <button class="btn ghost" data-action="leave">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Join -->
+    <section class="screen" id="screen-join">
+      <div class="panel center-panel">
+        <p class="eyebrow">Online · Join</p>
+        <h2>Enter the code</h2>
+        <input
+          id="join-code"
+          class="code-input"
+          maxlength="4"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          enterkeyhint="go"
+          aria-label="Pairing code"
+          placeholder="····"
+        />
+        <p class="muted">Ask the host for the four letters on their screen.</p>
+        <p class="status" id="join-status" aria-live="polite"><i></i><span></span></p>
+        <div class="menu-row">
+          <button class="btn primary" id="btn-join-go" data-action="join-go">Join race</button>
+          <button class="btn ghost" data-action="leave">Back</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Guest lobby -->
+    <section class="screen" id="screen-lobby">
+      <div class="panel center-panel">
+        <p class="eyebrow">Online · Connected</p>
+        <h2>You’re in</h2>
+        <div class="versus" id="lobby-versus"></div>
+        <p class="status" id="lobby-status" aria-live="polite"><i></i><span></span></p>
+        <div class="menu-row">
+          <button class="btn ghost" data-action="leave">Leave</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Race HUD -->
+    <section class="screen" id="screen-race">
+      <div class="zone zone-left" id="zone-brake" data-on="0"><span>Brake</span></div>
+      <div class="zone zone-right" id="zone-drift" data-on="0"><span>Drift</span></div>
+      <div class="hud-top">
+        <button class="hud-pause" data-action="pause" aria-label="Pause"><i></i><i></i></button>
+        <div class="hud-standing">
+          <div class="hud-pos" id="hud-poswrap"><span id="hud-pos"></span></div>
+          <div class="hud-lap"><small>Lap</small><span id="hud-lap">1/3</span></div>
+        </div>
+        <div class="hud-time" id="hud-time">0:00.00</div>
+        <canvas class="hud-map" id="hud-map" aria-hidden="true"></canvas>
+      </div>
+      <div class="hud-speed">
+        <span id="hud-speed">0</span><small>mph</small>
+        <div class="hud-charge" data-on="0"><i id="hud-charge"></i></div>
+      </div>
+      <div class="hud-boost" id="hud-boost" data-on="0"></div>
+      <div class="hud-banner" id="hud-banner" data-show="0"></div>
+      <div class="hud-toast" id="hud-toast" data-show="0"></div>
+      <div class="hud-net" id="hud-net" hidden></div>
+      <div class="hud-portrait">Landscape works best: hold the iPad sideways.</div>
+    </section>
+
+    <!-- Results -->
+    <section class="screen" id="screen-results">
+      <div class="panel results-panel">
+        <p class="eyebrow">Race complete</p>
+        <div class="res-place" id="res-place">1st</div>
+        <p class="res-line" id="res-line"></p>
+        <table class="res-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Driver</th>
+              <th>Time</th>
+              <th>Best lap</th>
+            </tr>
+          </thead>
+          <tbody id="res-table"></tbody>
+        </table>
+        <p class="status" id="res-status" hidden><i></i><span></span></p>
+        <div class="menu-row">
+          <button class="btn primary" id="btn-rematch" data-action="rematch">Race again</button>
+          <button class="btn ghost" data-action="leave">Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <div class="modal" id="modal-settings" data-open="0" role="dialog" aria-modal="true" aria-labelledby="set-title">
+      <div class="sheet">
+        <h2 id="set-title">Settings</h2>
+        <label class="field">
+          <span>Driver name</span>
+          <input id="set-name" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" />
+        </label>
+        <div class="field">
+          <span>Kart colour</span>
+          <div class="swatches" id="set-colors"></div>
+        </div>
+        <div class="field">
+          <span>Steering: full lock at <b id="set-angle-val">28°</b></span>
+          <input type="range" id="set-angle" step="1" />
+          <div class="range-labels"><small>Sharper</small><small>Gentler</small></div>
+          <div class="probe">
+            <div class="probe-track"><i id="probe-bar"></i></div>
+            <small id="probe-label">Turn the device to test</small>
+          </div>
+          <div class="menu-row tight">
+            <button class="btn ghost small" data-action="recenter-settings">Set current hold as centre</button>
+            <button class="btn ghost small" data-action="reset-center">Reset centre</button>
+          </div>
+        </div>
+        <div class="field">
+          <span>Laps (solo races and races you host)</span>
+          <div class="laps" role="group" aria-label="Laps">
+            <button type="button" data-laps="1">1</button>
+            <button type="button" data-laps="3">3</button>
+            <button type="button" data-laps="5">5</button>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="set-lock" />
+          <span
+            ><b>Level horizon</b><small>The view stays level with the real ground as you turn the iPad.</small></span
+          >
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="set-sound" />
+          <span><b>Sound</b></span>
+        </label>
+        <div class="menu-row">
+          <button class="btn primary" data-action="settings-done">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- How to play -->
+    <div class="modal" id="modal-howto" data-open="0" role="dialog" aria-modal="true" aria-labelledby="how-title">
+      <div class="sheet howto">
+        <h2 id="how-title">How to play</h2>
+        <div class="howto-body">
+          <svg class="howto-art" viewBox="0 0 240 170" aria-hidden="true">
+            <defs>
+              <clipPath id="how-screen">
+                <rect x="-72" y="-50" width="144" height="100" rx="9" transform="rotate(18)" />
+              </clipPath>
+            </defs>
+            <g transform="translate(120 88)">
+              <g clip-path="url(#how-screen)">
+                <rect x="-130" y="-110" width="260" height="110" fill="#5aa8ea" />
+                <rect x="-130" y="0" width="260" height="110" fill="#5fbf4a" />
+                <path d="M-46 110 L-5 0 L5 0 L46 110 Z" fill="#4a4f57" />
+                <path d="M-1.2 110 L-0.4 0 L0.4 0 L1.2 110 Z" fill="#fff" opacity="0.7" />
+              </g>
+              <line x1="-118" y1="0" x2="118" y2="0" stroke="#ffd400" stroke-width="2" stroke-dasharray="5 5" />
+              <rect
+                x="-78"
+                y="-56"
+                width="156"
+                height="112"
+                rx="15"
+                fill="none"
+                stroke="#fff"
+                stroke-width="5"
+                transform="rotate(18)"
+              />
+              <path
+                d="M-40 -76 A 88 88 0 0 1 40 -76"
+                fill="none"
+                stroke="#ffd400"
+                stroke-width="4"
+                stroke-linecap="round"
+              />
+              <path d="M40 -76 l-12 -3 l6 11 z" fill="#ffd400" />
+            </g>
+          </svg>
+          <ul>
+            <li>
+              <b>Steer</b> by turning the iPad like a steering wheel. The picture counter-rotates, so the horizon stays
+              level with the real world.
+            </li>
+            <li><b>Gas is automatic.</b> Hold your <b>left thumb</b> on the screen to brake or reverse.</li>
+            <li>
+              <b>Drift:</b> hold your <b>right thumb</b> while turning. Sparks go blue, orange, pink. Let go for a
+              turbo.
+            </li>
+            <li>Hit the yellow <b>boost pads</b>. Grass slows you down.</li>
+            <li>
+              <b>Online:</b> one player taps Host and reads out the four-letter code; the other taps Join and types it
+              in.
+            </li>
+          </ul>
+        </div>
+        <div class="menu-row">
+          <button class="btn primary" data-action="close">Got it</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div class="modal" id="modal-pause" data-open="0" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+      <div class="sheet narrow">
+        <h2 id="pause-title">Paused</h2>
+        <p class="muted" id="pause-note" hidden>Online races keep running while this menu is open.</p>
+        <div class="menu">
+          <button class="btn primary" data-action="close">Resume</button>
+          <button class="btn" data-action="recenter">Recentre steering</button>
+          <button class="btn ghost" data-action="quit">Quit race</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Motion permission denied -->
+    <div class="modal" id="modal-motion" data-open="0" role="dialog" aria-modal="true" aria-labelledby="motion-title">
+      <div class="sheet narrow">
+        <h2 id="motion-title">Motion access is off</h2>
+        <p class="muted">
+          Steering needs the motion sensors. Reload the page and tap <b>Allow</b> when Safari asks. If it doesn’t ask
+          again, close this tab, reopen the game and allow motion access.
+        </p>
+        <div class="menu">
+          <button class="btn primary" onclick="location.reload()">Reload</button>
+          <button class="btn ghost" data-action="close">Not now</button>
+        </div>
+      </div>
+    </div>
+
+    <pre id="debug" class="debug" hidden></pre>
+    <script type="module" src="game.js"></script>
+  </body>
+</html>

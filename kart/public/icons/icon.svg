@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="screen">
+      <rect x="104" y="150" width="304" height="212" rx="24" transform="rotate(-14 256 256)"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0e1116"/>
+  <g clip-path="url(#screen)">
+    <rect width="512" height="270" fill="#4d9fe6"/>
+    <rect y="270" width="512" height="242" fill="#5fbf4a"/>
+    <path d="M178 512 L248 270 L264 270 L334 512 Z" fill="#4a4f57"/>
+    <path d="M254 512 L255.2 270 L256.8 270 L258 512 Z" fill="#ffd400"/>
+  </g>
+  <rect x="90" y="136" width="332" height="240" rx="36" fill="none" stroke="#ffffff" stroke-width="22" transform="rotate(-14 256 256)"/>
+</svg>
