@@ -114,7 +114,15 @@ export function currentScreenDeg(env = globalThis) {
   else if (typeof env.orientation === 'number') a = env.orientation;
   else if (env.innerWidth && env.innerHeight) a = env.innerWidth > env.innerHeight ? 90 : 0;
   else a = 0;
-  return ((a % 360) + 360) % 360;
+  a = ((a % 360) + 360) % 360;
+  // Some iPads report angle 0 while the page is landscape (and 90 in portrait).
+  // Trust the page's shape for portrait vs landscape; a leftover 180° error is
+  // absorbed by detectGravitySign.
+  if (env.innerWidth && env.innerHeight && env.innerWidth !== env.innerHeight) {
+    const landscape = env.innerWidth > env.innerHeight;
+    if (landscape === (a % 180 === 0)) a = (a + 90) % 360;
+  }
+  return a;
 }
 
 function isAppleTouch() {
