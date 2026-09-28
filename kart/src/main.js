@@ -1,6 +1,7 @@
 import { AIDriver } from './ai.js';
 import { KART_COLORS, NET, PHYS, RACE, STEER } from './config.js';
 import { Hud } from './hud.js';
+import { ScreenHold } from './hold.js';
 import { Controls } from './input.js';
 import { Kart, collideKarts } from './kart.js';
 import { Link, cleanCode } from './net.js';
@@ -29,6 +30,23 @@ const hud = new Hud(track);
 let link = null;
 let race = null;
 let screen = 'title';
+let rotationTipShown = false;
+
+const hold = new ScreenHold({
+  turnSign: () => {
+    const r = tilt.read();
+    return r && Math.abs(r.steer) > 5 * DEG ? Math.sign(r.steer) : 0;
+  },
+  onChange: (turn, changed) => {
+    tilt.held = turn !== 0;
+    orientationHint();
+    view.resize();
+    if (turn && changed && !rotationTipShown) {
+      rotationTipShown = true;
+      hud.toast('Tip: Rotation Lock in Control Center stops the screen turning', 5);
+    }
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Screens & modals
@@ -37,6 +55,7 @@ function show(name) {
   screen = name;
   document.body.dataset.screen = name;
   closeModals();
+  hold.set(name === 'race');
 }
 
 function openModal(id) {
@@ -567,8 +586,16 @@ function newLink() {
   link.on('stale', (stale) => {
     if (race) hud.netStatus(stale ? 'Connection lost… waiting' : '', stale ? 'bad' : '');
   });
-  link.on('warning', (msg) => {
-    if (screen === 'host') status('host-status', msg, 'bad');
+  link.on('down', (reason) => {
+    // The host lost the race server, and its code with it.
+    link = null;
+    if (screen === 'host') {
+      status('host-status', reason, 'bad');
+      $('btn-host-start').hidden = true;
+      $('btn-host-retry').hidden = false;
+    } else if (screen === 'results') {
+      renderResults();
+    }
   });
   link.on('message', (msg) => {
     if (msg.t === 'start' && link.role === 'guest') startOnline(link.toLocal(msg.at), msg.laps, msg.id);
@@ -959,7 +986,8 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault());
 
 function orientationHint() {
-  const portrait = window.innerHeight > window.innerWidth;
+  // The body's box, which is the race's shape while the screen is held.
+  const portrait = document.body.clientHeight > document.body.clientWidth;
   document.body.dataset.portrait = portrait ? '1' : '0';
 }
 window.addEventListener('resize', orientationHint);

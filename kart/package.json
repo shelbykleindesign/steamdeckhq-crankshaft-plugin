@@ -10,17 +10,15 @@
     "dev": "node build.mjs --serve",
     "test": "node --test test/*.test.mjs",
     "track": "node tools/track-report.mjs",
-    "peer-server": "peerjs --port 9000 --host 0.0.0.0",
+    "serve": "node tools/dev-server.mjs",
     "test:e2e": "node test/e2e/tilt.mjs && node test/e2e/online.mjs",
-    "format": "prettier --write \"src/**/*.js\" \"test/**/*.mjs\" \"tools/*.mjs\" build.mjs public/style.css public/index.html"
+    "format": "prettier --write \"src/**/*.js\" \"test/**/*.mjs\" \"tools/*.mjs\" serve/relay.mjs build.mjs public/style.css public/index.html"
   },
   "dependencies": {
-    "peerjs": "1.5.5",
     "three": "0.186.1"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "peer": "^1.0.2",
     "playwright": "^1.56.1"
   }
 }

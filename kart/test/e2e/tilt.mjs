@@ -4,11 +4,15 @@
 //   - the horizon, as projected by the live camera, counter-rotates by the
 //     device angle, i.e. it stays level with the real world
 //   - the camera never pitches
-// Needs `npx http-server public -p 8080` running.   node test/e2e/tilt.mjs
+//   - when iPadOS turns the page to portrait mid-race, the race is held in
+//     landscape, turned back the way the iPad turned, horizon still level
+// Serves the committed build itself (or set KART_URL).   node test/e2e/tilt.mjs
 import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright';
+import { startDevServer } from '../../tools/dev-server.mjs';
 
-const BASE = process.env.KART_URL || 'http://localhost:8080/';
+const server = process.env.KART_URL ? null : await startDevServer({ port: 0, host: '127.0.0.1' });
+const BASE = process.env.KART_URL || `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 });
@@ -22,14 +26,14 @@ console.log(`  emulated screen orientation angle: ${angle}`);
 
 /**
  * Feed accelerationIncludingGravity for a device turned `turnDeg` clockwise
- * (as the player sees it) and tipped back `backDeg`, in the current UI
- * orientation. sign = +1 spec/Android, -1 iOS.
+ * (as the player sees it) and tipped back `backDeg`, relative to UI
+ * orientation `uiDeg` (default: the current one). sign = +1 spec/Android, -1 iOS.
  */
-async function hold(turnDeg, { sign = -1, backDeg = 25 } = {}) {
+async function hold(turnDeg, { sign = -1, backDeg = 25, uiDeg = null } = {}) {
   await page.evaluate(
-    ({ turnDeg, sign, backDeg }) => {
+    ({ turnDeg, sign, backDeg, uiDeg }) => {
       const r = Math.PI / 180;
-      const ui = ((screen.orientation ? screen.orientation.angle : window.orientation) || 0) * r;
+      const ui = (uiDeg ?? ((screen.orientation ? screen.orientation.angle : window.orientation) || 0)) * r;
       const planar = Math.cos(backDeg * r);
       const sx = -Math.sin(turnDeg * r) * planar;
       const sy = Math.cos(turnDeg * r) * planar;
@@ -46,7 +50,7 @@ async function hold(turnDeg, { sign = -1, backDeg = 25 } = {}) {
       window.__sensor = setInterval(() => window.dispatchEvent(e), 16);
       for (let i = 0; i < 20; i++) window.dispatchEvent(e);
     },
-    { turnDeg, sign, backDeg },
+    { turnDeg, sign, backDeg, uiDeg },
   );
   await frames(2);
 }
@@ -72,8 +76,9 @@ function horizon() {
   return page.evaluate(() => {
     const cam = window.__kart.view.camera;
     cam.updateMatrixWorld();
-    const W = innerWidth;
-    const H = innerHeight;
+    // In the canvas's own frame (it is rotated as a whole while the screen is held).
+    const W = document.getElementById('scene').clientWidth;
+    const H = document.getElementById('scene').clientHeight;
     const screenOf = (yawOffset) => {
       const yaw = cam.rotation.y + yawOffset;
       const p = cam.position.clone();
@@ -129,5 +134,72 @@ const off = await horizon();
 assert.ok(Math.abs(off.slopeDeg) < 1.5, 'lock off: horizon fixed to the screen');
 console.log('✓ horizon lock off keeps the view screen-aligned');
 
+await page.evaluate(() => (window.__kart.settings.horizonLock = true));
+
+// iPadOS auto-rotates to portrait mid-corner. The iPad (landscape, angle 90) is
+// turned 60° clockwise, so the OS switches to portrait (angle 0).
+const cdp = await ctx.newCDPSession(page);
+const metrics = (w, h, type, angle) =>
+  cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: w,
+    height: h,
+    deviceScaleFactor: 1,
+    mobile: true,
+    screenOrientation: { type, angle },
+  });
+const W0 = await page.evaluate(() => innerWidth);
+const H0 = await page.evaluate(() => innerHeight);
+await page.evaluate(() => window.__kart.tilt.unlock());
+await hold(0);
+await page.evaluate(() => window.__kart.tilt.lock());
+await hold(60, { uiDeg: angle });
+await metrics(H0, W0, 'portraitPrimary', 0);
+await hold(60, { uiDeg: angle });
+await frames(3);
+const held = await page.evaluate(() => {
+  const b = document.body;
+  const c = document.getElementById('scene');
+  return {
+    hold: b.dataset.hold,
+    turn: b.style.getPropertyValue('--hold-turn'),
+    portrait: b.dataset.portrait,
+    canvas: [c.clientWidth, c.clientHeight],
+    viewport: [innerWidth, innerHeight],
+    glass: (({ width, height }) => [Math.round(width), Math.round(height)])(c.getBoundingClientRect()),
+    steer: window.__kart.controls.read(0).steer,
+  };
+});
+const heldHorizon = await horizon();
+console.log(`  held after auto-rotate: ${JSON.stringify(held)}, horizon ${heldHorizon.slopeDeg.toFixed(1)}°`);
+assert.equal(held.hold, '1', 'page is held');
+assert.equal(held.turn, '90deg', 'turned back clockwise, the way the iPad turned');
+assert.equal(held.portrait, '0', 'layout stays landscape');
+assert.deepEqual(held.canvas, [W0, H0], 'race still drawn at its landscape size');
+assert.deepEqual(held.glass, held.viewport, 'and turned to fill the portrait page');
+assert.equal(held.steer, 1, 'steering unaffected: full lock at 60°');
+assert.ok(Math.abs(heldHorizon.slopeDeg - 60) < 3, `horizon still level in the world, got ${heldHorizon.slopeDeg}`);
+console.log('✓ auto-rotate to portrait mid-race: held in landscape, horizon level');
+
+// Anticlockwise the other way round: rotate back the other way.
+await metrics(W0, H0, 'landscapePrimary', angle);
+await hold(0, { uiDeg: angle });
+await frames(2);
+assert.equal(await page.evaluate(() => document.body.dataset.hold), undefined, 'released when the page turns back');
+await hold(-60, { uiDeg: angle });
+await metrics(H0, W0, 'portraitSecondary', 180);
+await hold(-60, { uiDeg: angle });
+await frames(3);
+const turnBack = await page.evaluate(() => document.body.style.getPropertyValue('--hold-turn'));
+assert.equal(turnBack, '-90deg', 'anticlockwise turn is held the other way');
+console.log('✓ anticlockwise auto-rotate held the other way');
+
+// After the race, menus follow the device again.
+await page.evaluate(() => document.querySelector('[data-action=quit]').click());
+await frames(2);
+const menu = await page.evaluate(() => [document.body.dataset.screen, document.body.dataset.hold]);
+assert.deepEqual(menu, ['title', undefined], 'menus are not held');
+console.log('✓ menus follow the device');
+
 await browser.close();
+server?.close();
 console.log('All tilt checks passed.');

@@ -133,6 +133,7 @@ export class TiltInput {
     this.signLocked = false;
     this.refDeg = currentScreenDeg();
     this.center = 0; // player-chosen neutral (radians)
+    this.held = false; // set while hold.js keeps the page in the race's orientation
     this.listening = false;
     this._onMotion = this._onMotion.bind(this);
     // Test hook: a fixed simulated roll (radians) overrides the sensor.
@@ -243,7 +244,10 @@ export class TiltInput {
     const ux = this.g[0] * s;
     const uy = this.g[1] * s;
     const uz = this.g[2] * s;
-    const nowDeg = currentScreenDeg();
+    // While a race holds the page against an iPadOS auto-rotate (hold.js), the
+    // view is still drawn in the race's orientation.
+    const nowDeg = this.held ? this.refDeg : currentScreenDeg();
+    if (!this.signLocked) this.refDeg = nowDeg;
     // A deliberate 180° flip of the device mid-race: follow it. (A 90° change is
     // iOS auto-rotating during a hard turn, which must not move the reference.)
     if ((((nowDeg - this.refDeg) % 360) + 360) % 360 === 180) this.refDeg = nowDeg;

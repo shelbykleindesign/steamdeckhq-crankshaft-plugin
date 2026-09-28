@@ -4,7 +4,7 @@ A first-person kart racer for iPad. Hold the iPad like a steering wheel and turn
 
 Race a CPU rival solo, or race another person online: one device hosts and shows a four-letter code, the other types it in.
 
-Live at **<https://moto.shelbyklein.com>**, served from the Beelink. `public/` is the whole site: plain static files, with the built bundle committed. `serve/` runs it.
+Live at **<https://moto.shelbyklein.com>**, served from the Beelink. `public/` is the whole site: plain static files, with the built bundle committed. `serve/` runs it, including the small relay that pairs online players.
 
 ## Controls
 
@@ -22,13 +22,20 @@ Yellow chevron pads give a boost. Grass slows you down.
 
 **Tips for iPad**
 
-- Turn on **Rotation Lock** in Control Center. On iPad it locks whichever orientation you're holding, so a hard turn can't flip the screen to portrait. The game also survives an accidental auto-rotate mid-race, because steering is measured against the orientation you started the race in.
-- **Share → Add to Home Screen** runs it full screen with no Safari toolbars.
+- Turn on **Rotation Lock** in Control Center. On iPad it locks whichever orientation you're holding, so a hard turn can't make iPadOS spin the screen to portrait. Without it, a hard turn in Safari will spin the page. The game turns the race straight back (see `src/hold.js`), so steering and the horizon carry on, but you see the spin. The first time it happens, the game shows a Rotation Lock tip.
+- **Share → Add to Home Screen** runs it full screen with no Safari toolbars, and stays in landscape: the app manifest asks for landscape, which iPadOS honours for Home Screen apps.
 - Settings has a live steering meter, a sensitivity slider ("full lock at N°" of rotation, default 28°), a _Level horizon_ toggle, and a _Set current hold as centre_ button for players who naturally hold the iPad slightly turned.
 
 ## Hosting (Beelink)
 
-Safari only gives motion-sensor access to pages served over **HTTPS**. On the Beelink, `serve/docker-compose.yml` runs nginx for `public/` next to `cloudflared`, which connects the dedicated `moto` Cloudflare Tunnel. That tunnel routes `moto.shelbyklein.com` to `http://web:80` on the compose network. Cloudflare supplies the certificate, and nothing is exposed on the router or the host.
+Safari only gives motion-sensor access to pages served over **HTTPS**, so a page opened over `http://` sends itself to `https://` (local addresses excepted). On the Beelink, `serve/docker-compose.yml` runs four services:
+
+- **web**: nginx serving `public/`, and passing `/net` through to the relay.
+- **relay**: `serve/relay.mjs` on Node, which pairs online players (see [Online play](#online-play)).
+- **updater**: pulls this branch every minute, so pushed changes to the game go live without logging in (`serve/update.sh`).
+- **tunnel**: `cloudflared`, connecting the dedicated `moto` Cloudflare Tunnel, which routes `moto.shelbyklein.com` to `http://web:80` on the compose network.
+
+Cloudflare supplies the certificate, and nothing is exposed on the router or the host.
 
 Over SSH, one line clones the game (first time) and starts or updates everything:
 
@@ -36,7 +43,9 @@ Over SSH, one line clones the game (first time) and starts or updates everything
 git clone -q --depth 1 -b claude/kart-accelerometer-steering-yry610 https://github.com/shelbykleindesign/steamdeckhq-crankshaft-plugin ~/tilt-kart 2>/dev/null; ~/tilt-kart/kart/serve/up.sh
 ```
 
-`up.sh` pulls the latest files, fetches the tunnel token with this machine's `cloudflared` login into `serve/.env` (mode 600) the first time, and runs `docker compose up -d`. If `cloudflared` isn't logged in, it says how to fix that. Re-run it to deploy updates. `npm run build` stamps `game.js` and `style.css` in `index.html` with a content hash (`?v=…`), and `index.html` is never cached. So players get a new version on their next load, even though Cloudflare lets browsers keep those files for hours.
+`up.sh` pulls the latest files, fetches the tunnel token with this machine's `cloudflared` login into `serve/.env` (mode 600) the first time, and runs `docker compose up -d`. If `cloudflared` isn't logged in, it says how to fix that.
+
+After that, deploying is just pushing to the branch: the updater fast-forwards the checkout within a minute, and nginx serves the new files on the next page load (`docker compose logs updater` shows what it pulled). Changes inside `serve/` (the nginx config, the relay, the compose file) only take effect when you re-run `./up.sh`, which restarts the services that use them. `npm run build` stamps `game.js` and `style.css` in `index.html` with a content hash (`?v=…`), and `index.html` is never cached. So players get a new version on their next load, even though Cloudflare lets browsers keep those files for hours.
 
 The tunnel, its route and the DNS record live in Cloudflare (Zero Trust → Networks → Tunnels → `moto`), so nothing about the domain is configured on the Beelink.
 
@@ -50,38 +59,32 @@ cloudflared tunnel --url http://localhost:8080      # or: npx localtunnel --port
 
 ## Online play
 
-Pairing uses [PeerJS](https://peerjs.com). The host registers the ID `tiltkart-v1-<CODE>` on PeerJS's free public signaling server. The guest looks that ID up, and the two devices then talk directly over WebRTC. If a network blocks direct connections (common on cellular), they fall back to PeerJS's public TURN relay. There is no game server to run.
+Both devices connect to the relay on the Beelink (`serve/relay.mjs`) over a WebSocket at `wss://moto.shelbyklein.com/net`: the same host and connection that served the page. So online play works on any network that can load the game, cellular included, with no third-party servers. The host opens a room under a random four-letter code, the guest joins it by code, and the relay passes their messages along. A third player gets "That race already has two players". When the guest leaves, the host keeps the code for the next one.
 
-Each device simulates its own kart and sends its state 20 times a second. The other side draws it 110 ms in the past and interpolates, which keeps it smooth. The green light is synchronised with an NTP-style clock estimate, so both countdowns hit GO at the same moment.
+Each device simulates its own kart and sends its state 20 times a second. The other side draws it 110 ms in the past and interpolates, which keeps it smooth. The green light is synchronised with an NTP-style clock estimate over the relay, so both countdowns hit GO at the same moment.
 
-The public signaling server has no uptime guarantee. To run your own:
-
-```sh
-npm run peer-server        # PeerJS server on port 9000
-```
-
-Then open the game on both devices with `?peerhost=<server-ip>&peerport=9000&peersecure=0`. A page served over HTTPS can only reach a signaling server that also uses HTTPS/WSS. For that, pass `--sslkey`/`--sslcert` to `peerjs` or put it behind a reverse proxy, and drop `peersecure=0`.
+The relay is one file with no dependencies: a minimal WebSocket server on Node's `http` module, with limits on rooms, message size and rate. It sends a keepalive every 20 s so Cloudflare and nginx don't drop a quiet lobby.
 
 ## Development
 
 ```sh
 npm install
-npm run dev          # watch + serve on :8080
+npm run dev          # rebuild on save + serve public/ and the relay on :8080
+npm run serve        # serve the committed build and the relay on :8080
 npm run build        # production bundle -> public/game.js (commit it)
-npm test             # unit tests: steering math, track geometry, physics, laps
+npm test             # unit tests: steering math, track geometry, physics, laps, relay
 npm run track        # circuit stats (length, tightest corner, clearances)
 ```
 
-Browser tests (Playwright; run `npx playwright install chromium` once):
+Browser tests (Playwright; run `npx playwright install chromium` once). They serve the committed build and the relay themselves; set `KART_URL` to point them at a running deployment instead:
 
 ```sh
-npx http-server public -p 8080 &     # serve the built game
-npm run peer-server &                # local signaling server for the online test
 npm run test:e2e
 ```
 
-- `test/e2e/tilt.mjs` feeds real `devicemotion` events to an emulated landscape iPad, using both the iOS and the spec gravity sign. It checks that a clockwise turn steers right, and that the horizon the camera projects counter-rotates by exactly the device angle. With _Level horizon_ off, it checks the view stays screen-aligned.
-- `test/e2e/online.mjs` pairs two browsers with a code, rejects a wrong code, and checks the green light fires at the same moment on both. The two karts then race to the finish, both devices must show the same results, a rematch must carry state again, and the host must be told when the guest quits.
+- `test/e2e/tilt.mjs` feeds real `devicemotion` events to an emulated landscape iPad, using both the iOS and the spec gravity sign. It checks that a clockwise turn steers right, and that the horizon the camera projects counter-rotates by exactly the device angle. With _Level horizon_ off, it checks the view stays screen-aligned. It then turns the emulated iPad to portrait mid-race, as iPadOS does in a hard corner. The race must stay drawn in landscape, turned back the way the iPad turned, with the horizon still level; menus must follow the device again.
+- `test/e2e/online.mjs` pairs two browsers with a code, rejects a wrong code and a third player, and checks the green light fires at the same moment on both. The two karts then race to the finish, both devices must show the same results, a rematch must carry state again, and the host must be told when the guest quits.
+- `test/relay.test.mjs` covers the relay directly (rooms, keepalives, and the WebSocket framing rules browsers never break) and the game's `Link` talking to it.
 
 URL flags:
 
@@ -97,7 +100,9 @@ URL flags:
 | `src/kart.js`                        | Arcade physics: grip and slide, drift and mini-turbo, walls, boost pads       |
 | `src/track.js`                       | The circuit (a closed spline) and track-relative queries                      |
 | `src/world.js` / `src/kart-model.js` | Procedural environment and kart meshes (no image assets)                      |
-| `src/net.js`                         | Pairing codes, WebRTC link, clock sync, heartbeat                             |
+| `src/net.js`                         | Pairing codes, the link through the relay, clock sync, heartbeat              |
+| `src/hold.js`                        | Holds a race in its orientation when iPadOS rotates the page mid-corner       |
+| `serve/relay.mjs`                    | The online relay: rooms by code, WebSocket server, no dependencies            |
 | `src/main.js`                        | Screens, race flow, snapshot interpolation, results                           |
 | `src/config.js`                      | All tuning numbers: speeds, grip, steering, camera, network rates             |
 
@@ -114,7 +119,7 @@ iOS reports gravity with the opposite sign to the W3C spec (and to Android). The
 ## Known limits
 
 - Two players per online race.
-- Online play depends on the public PeerJS server unless you self-host it (above).
+- Online races go through the Beelink, so the two devices can't race if it's down (the page wouldn't load either).
 - The iPad itself has no vibration API, so there is no haptic feedback.
 
-Third-party code bundled into `public/game.js` (three.js, PeerJS and their dependencies) is listed with its licenses in `public/third-party-licenses.txt`, regenerated on every build.
+Third-party code bundled into `public/game.js` (three.js) is listed with its license in `public/third-party-licenses.txt`, regenerated on every build.

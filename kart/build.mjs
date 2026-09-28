@@ -1,10 +1,11 @@
 // Bundles src/ into public/game.js. public/ is the whole site (the Beelink
 // serves it via serve/), so the built bundle is committed.
 //   npm run build        production bundle (+ third-party license notices)
-//   npm run dev          rebuild on change + serve public/ on :8080
+//   npm run dev          rebuild on change + serve public/ and the relay on :8080
 import * as esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { startDevServer } from './tools/dev-server.mjs';
 
 const serve = process.argv.includes('--serve');
 
@@ -23,8 +24,8 @@ const ctx = await esbuild.context({
 
 if (serve) {
   await ctx.watch();
-  const { port } = await ctx.serve({ servedir: 'public', port: 8080, host: '0.0.0.0' });
-  console.log(`Serving public/ on http://localhost:${port}`);
+  const server = await startDevServer({ port: 8080 });
+  console.log(`Serving public/ and the relay on http://localhost:${server.address().port}`);
   console.log('Motion sensors need HTTPS on iPad: tunnel this port or deploy (see README).');
 } else {
   const result = await ctx.rebuild();
@@ -54,8 +55,7 @@ function versionAssets() {
 
 /** Collect the license text of every npm package that ended up in the bundle. */
 function writeNotices(metafile) {
-  // eventemitter3 is inlined inside peerjs's own dist, so it never shows up as an input.
-  const pkgs = new Set(['eventemitter3']);
+  const pkgs = new Set();
   for (const file of Object.keys(metafile.inputs)) {
     const m = file.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//);
     if (m) pkgs.add(m[1]);

@@ -1,21 +1,53 @@
-# Tilt Kart on the Beelink: nginx serves ../public, and cloudflared connects the
-# dedicated 'moto' Cloudflare Tunnel, which routes moto.shelbyklein.com to
-# http://web:80 on this compose network. Start or update with ./up.sh.
+# Tilt Kart on the Beelink: nginx serves ../public, the relay pairs online
+# players, the updater keeps the files current with the git branch, and
+# cloudflared connects the dedicated 'moto' Cloudflare Tunnel, which routes
+# moto.shelbyklein.com to http://web:80 on this compose network.
+# Start, or apply changes to this folder, with ./up.sh.
 name: tilt-kart
+
+x-logging: &logging
+  driver: local # rotates, so logs can't fill the disk
 
 services:
   web:
     image: nginx:stable-alpine
     restart: unless-stopped
+    logging: *logging
     volumes:
       - ../public:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     # No host port needed: the tunnel reaches nginx inside Docker. To browse it
     # from the host as well, add:  ports: ['127.0.0.1:8088:80']
 
+  relay:
+    image: node:24-alpine
+    restart: unless-stopped
+    logging: *logging
+    user: node
+    read_only: true
+    command: ['node', '/app/relay.mjs']
+    volumes:
+      - ./relay.mjs:/app/relay.mjs:ro
+
+  # Pulls the branch every minute, so pushed changes to the game (public/) go
+  # live on their own. Changes in this folder still need ./up.sh. Runs as the
+  # checkout's owner so the files it writes stay yours.
+  updater:
+    image: alpine/git:latest
+    restart: unless-stopped
+    logging: *logging
+    user: ${KART_USER:-1000:1000}
+    environment:
+      HOME: /tmp
+    volumes:
+      - ../..:/repo
+    working_dir: /repo
+    entrypoint: ['/bin/sh', '/repo/kart/serve/update.sh']
+
   tunnel:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
+    logging: *logging
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?run ./up.sh, or put the moto tunnel token in serve/.env}

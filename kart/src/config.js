@@ -9,8 +9,6 @@ export const PROTOCOL_VERSION = 1;
 // Pairing codes are consonants only so they can't spell words and are easy to read aloud.
 export const CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 export const CODE_LENGTH = 4;
-// Namespaces our peer IDs on the shared PeerJS signaling server.
-export const PEER_PREFIX = 'tiltkart-v1-';
 
 export const PHYS = {
   dt: 1 / 120,
@@ -80,6 +78,7 @@ export const NET = {
   timeoutMs: 6000,
   connectTimeoutMs: 15000,
   pingIntervalMs: 1000,
+  relayTimeoutMs: 45000, // no word from the relay (it sends a keepalive every 20 s) = socket is dead
 };
 
 export const RACE = {

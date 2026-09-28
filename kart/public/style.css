@@ -51,6 +51,17 @@ body {
   inset: 0;
 }
 
+/* iPadOS turned the page mid-race: draw it at the race's shape and turn it
+   back to fit the glass (see src/hold.js). */
+body[data-hold] {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: var(--hold-w);
+  height: var(--hold-h);
+  transform: translate(-50%, -50%) rotate(var(--hold-turn));
+}
+
 #scene {
   position: fixed;
   inset: 0;
@@ -1198,7 +1209,8 @@ input[type='range'] {
     width: 100%;
     height: auto;
   }
-  .hud-top {
+  /* Not while a race is held in landscape against an iPadOS auto-rotate. */
+  body:not([data-hold]) .hud-top {
     grid-template-columns: auto 1fr auto;
     grid-template-areas:
       'pause standing map'

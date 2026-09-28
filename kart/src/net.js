@@ -1,15 +1,12 @@
-// Peer-to-peer link between two devices, paired with a short code.
-//
-// The host registers the peer ID PEER_PREFIX + CODE on a PeerJS signaling
-// server; the guest connects to that ID. After the WebRTC handshake all game
-// traffic flows directly between the two devices (or via TURN when a direct
-// path isn't possible). No game server is involved.
-//
-// Override the signaling server with URL params, e.g. for a self-hosted
-// `npx peerjs --port 9000`:  ?peerhost=192.168.1.20&peerport=9000&peersecure=0
+// Two-player link through the relay on our own server (serve/relay.mjs, at /net
+// on the same origin as the page). The host opens a room under a fresh code,
+// the guest joins it with that code, and the relay passes messages between
+// them. It all rides the HTTPS connection that served the page, so it works on
+// any network that can load the game.
 
-import { Peer } from 'peerjs';
-import { CODE_ALPHABET, CODE_LENGTH, NET, PEER_PREFIX, PROTOCOL_VERSION } from './config.js';
+import { CODE_ALPHABET, CODE_LENGTH, NET, PROTOCOL_VERSION } from './config.js';
+
+const UNREACHABLE = "Can't reach the race server. Check your internet connection and try again.";
 
 export function makeCode() {
   let s = '';
@@ -29,54 +26,23 @@ export function cleanCode(input) {
     .slice(0, CODE_LENGTH);
 }
 
-function peerOptions() {
-  const q = new URLSearchParams(location.search);
-  const opts = { debug: q.has('netdebug') ? 2 : 0 };
-  const host = q.get('peerhost');
-  if (host) {
-    opts.host = host;
-    opts.secure = q.get('peersecure') !== '0';
-    opts.port = Number(q.get('peerport')) || (opts.secure ? 443 : 80);
-    opts.path = q.get('peerpath') || '/';
-  }
-  return opts;
-}
-
-function describe(err, code) {
-  const type = err && err.type;
-  switch (type) {
-    case 'peer-unavailable':
-      return `No race found with code ${code}. Check the letters, and make sure the host's screen still shows the code.`;
-    case 'browser-incompatible':
-      return "This browser can't do online play (WebRTC is unavailable).";
-    case 'network':
-    case 'socket-error':
-    case 'socket-closed':
-    case 'server-error':
-      return "Can't reach the pairing server. Check your internet connection and try again.";
-    case 'unavailable-id':
-      return 'Could not create a race code. Try again.';
-    case 'webrtc':
-      return 'The two devices could not connect. Try again, or put both on the same Wi-Fi.';
-    default:
-      return `Connection problem${type ? ` (${type})` : ''}. Try again.`;
-  }
-}
-
 export class Link {
   constructor(profile) {
     this.profile = profile; // { name, color }
-    this.peer = null;
-    this.conn = null;
+    this.ws = null;
     this.role = null;
     this.code = null;
     this.remote = null; // { name, color }
     this.offset = 0; // remote clock minus local clock (ms)
     this.rtt = 0;
     this.samples = [];
-    this.lastHeard = 0;
+    this.lastHeard = 0; // last message from the other player
+    this.lastRelay = 0; // last message of any kind, relay keepalives included
     this.stale = false;
     this.timer = null;
+    this.watchdog = null;
+    this.pending = null; // the host() or join() promise, until it settles
+    this.tries = 0;
     this.closed = false;
     this.handlers = {};
   }
@@ -92,116 +58,127 @@ export class Link {
   }
 
   get connected() {
-    return !!(this.conn && this.conn.open && this.remote);
+    return !!(this.ws && this.ws.readyState === WebSocket.OPEN && this.remote && !this.closed);
   }
 
-  /** Register a fresh code. Resolves with the code once the server accepts it. */
+  /** Open a room under a fresh code. Resolves with the code. */
   host() {
     this.role = 'host';
-    return new Promise((resolve, reject) => {
-      let attempts = 0;
-      const attempt = () => {
-        const code = makeCode();
-        const peer = new Peer(PEER_PREFIX + code, peerOptions());
-        let opened = false;
-        peer.on('open', () => {
-          opened = true;
-          this.peer = peer;
-          this.code = code;
-          resolve(code);
-        });
-        peer.on('connection', (conn) => this.incoming(conn));
-        peer.on('disconnected', () => {
-          // Lost the signaling socket. Existing P2P links keep working; reconnect
-          // so a new guest can still find us while we wait in the lobby.
-          setTimeout(() => {
-            if (this.closed || this.peer !== peer || peer.destroyed || !peer.disconnected) return;
-            try {
-              peer.reconnect();
-            } catch {
-              // Destroyed in the meantime.
-            }
-          }, 1000);
-        });
-        peer.on('error', (err) => {
-          if (!opened) {
-            peer.destroy();
-            if (err.type === 'unavailable-id' && attempts++ < 5) attempt();
-            else reject(new Error(describe(err, code)));
-          } else if (err.type !== 'peer-unavailable') {
-            this.emit('warning', describe(err, code));
-          }
-        });
-      };
-      attempt();
-    });
+    const done = this.wait(UNREACHABLE);
+    this.openRoom();
+    return done;
   }
 
-  incoming(conn) {
-    if (this.conn && this.conn.open) {
-      conn.on('open', () => {
-        conn.send({ t: 'full' });
-        setTimeout(() => conn.close(), 500);
-      });
-      return;
-    }
-    this.attach(conn);
+  openRoom() {
+    this.code = makeCode();
+    this.open(`host=${this.code}`);
   }
 
-  /** Connect to a host's code. Resolves with the host's profile. */
+  /** Join the room with this code. Resolves with the host's profile. */
   join(code) {
     this.role = 'guest';
     this.code = code;
+    const done = this.wait("Couldn't connect. Check the code, and that both devices are online.");
+    this.open(`join=${code}`);
+    return done;
+  }
+
+  wait(timeoutMessage) {
     return new Promise((resolve, reject) => {
-      let settled = false;
-      const fail = (message) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        this.close(false);
-        reject(new Error(message));
-      };
-      const timeout = setTimeout(
-        () => fail("Couldn't connect. Check the code, and that both devices are online."),
-        NET.connectTimeoutMs,
-      );
-      this.onWelcome = (remote) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        resolve(remote);
-      };
-      this.onRefused = fail;
-      const peer = new Peer(peerOptions());
-      this.peer = peer;
-      peer.on('open', () => {
-        const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
-        this.attach(conn);
-        conn.on('open', () => {
-          conn.send({ t: 'hello', v: PROTOCOL_VERSION, name: this.profile.name, color: this.profile.color });
-        });
-      });
-      peer.on('error', (err) => {
-        if (!settled) fail(describe(err, code));
-        else if (err.type !== 'peer-unavailable') this.emit('warning', describe(err, code));
-      });
+      const timer = setTimeout(() => this.settle(timeoutMessage), NET.connectTimeoutMs);
+      this.pending = { resolve, reject, timer };
     });
   }
 
-  attach(conn) {
-    this.conn = conn;
-    // A host can see several connections over its lifetime; ignore stale ones.
-    const current = () => this.conn === conn;
-    conn.on('data', (msg) => current() && this.receive(msg));
-    conn.on('close', () => current() && this.lost('The other player left.'));
-    conn.on('error', () => current() && this.lost('Connection lost.'));
-    conn.on('iceStateChanged', (state) => {
-      if (current() && (state === 'failed' || state === 'closed')) this.lost('Connection lost.');
-    });
+  /** Settle the pending host() or join(): with an error message, or a value. */
+  settle(error, value) {
+    const p = this.pending;
+    if (!p) return;
+    this.pending = null;
+    clearTimeout(p.timer);
+    if (error) {
+      this.close(false);
+      p.reject(new Error(error));
+    } else {
+      p.resolve(value);
+    }
+  }
+
+  open(query) {
+    let ws;
+    try {
+      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/net?${query}`);
+    } catch {
+      this.settle(UNREACHABLE);
+      return;
+    }
+    this.ws = ws;
+    this.lastRelay = performance.now();
+    const current = () => this.ws === ws && !this.closed;
+    ws.onmessage = (e) => {
+      if (!current()) return;
+      this.lastRelay = performance.now();
+      let msg;
+      try {
+        msg = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+      if (typeof msg.relay === 'string') this.control(msg.relay);
+      else this.receive(msg);
+    };
+    // An error always means the socket is finished; don't count on a 'close' after it.
+    ws.onerror = ws.onclose = () => current() && this.dropped();
+    if (!this.watchdog) {
+      // The relay sends a keepalive every 20 s; silence means the socket is dead
+      // even if the browser hasn't noticed yet.
+      this.watchdog = setInterval(() => {
+        if (this.ws && performance.now() - this.lastRelay > NET.relayTimeoutMs) this.dropped();
+      }, 5000);
+    }
+  }
+
+  /** Messages from the relay itself (see serve/relay.mjs). */
+  control(what) {
+    switch (what) {
+      case 'room':
+        this.settle(null, this.code);
+        return;
+      case 'taken':
+        // Someone else is using this code: pick another.
+        this.detach();
+        if (this.tries++ < 5) this.openRoom();
+        else this.settle('Could not create a race code. Try again.');
+        return;
+      case 'busy':
+        this.settle('The race server is busy. Try again in a minute.');
+        return;
+      case 'paired':
+        this.send({ t: 'hello', v: PROTOCOL_VERSION, name: this.profile.name, color: this.profile.color });
+        return;
+      case 'nohost':
+        this.settle(
+          `No race found with code ${this.code}. Check the letters, and make sure the host's screen still shows the code.`,
+        );
+        return;
+      case 'full':
+        this.settle('That race already has two players.');
+        return;
+      case 'left':
+        this.lost('The other player left.');
+        return;
+      case 'bad':
+        this.settle('Connection problem. Try again.');
+        return;
+      // 'ka' (keepalive) needs nothing beyond the lastRelay update.
+    }
   }
 
   receive(msg) {
-    if (!msg || typeof msg !== 'object' || this.closed) return;
+    if (this.closed) return;
+    // Until a guest says hello, a host has no one to listen to.
+    if (this.role === 'host' && !this.remote && msg.t !== 'hello') return;
     this.lastHeard = performance.now();
     if (this.stale) {
       this.stale = false;
@@ -211,7 +188,7 @@ export class Link {
       case 'hello':
         if (this.role !== 'host') return;
         if (msg.v !== PROTOCOL_VERSION) {
-          this.conn.send({ t: 'refuse', reason: 'version' });
+          this.send({ t: 'refuse', reason: 'version' });
           return;
         }
         this.remote = { name: String(msg.name || 'Guest').slice(0, 16), color: String(msg.color || 'blue') };
@@ -223,15 +200,11 @@ export class Link {
         if (this.role !== 'guest') return;
         this.remote = { name: String(msg.name || 'Host').slice(0, 16), color: String(msg.color || 'red') };
         this.startPings();
-        if (this.onWelcome) this.onWelcome(this.remote);
+        this.settle(null, this.remote);
         this.emit('peer', this.remote);
         return;
       case 'refuse':
-        if (this.onRefused)
-          this.onRefused('That race is running a different version of the game. Reload both devices.');
-        return;
-      case 'full':
-        if (this.onRefused) this.onRefused('That race already has two players.');
+        this.settle('That race is running a different version of the game. Reload both devices.');
         return;
       case 'ping':
         this.send({ t: 'pong', a: msg.a, b: performance.now() });
@@ -280,55 +253,56 @@ export class Link {
   }
 
   send(msg) {
-    if (!this.conn || !this.conn.open) return;
-    try {
-      this.conn.send(msg);
-    } catch {
-      // The channel can close between the check and the send.
-    }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
+  /** The other player is gone. A host keeps its room open so someone can join again. */
   lost(reason) {
     if (this.closed) return;
     const wasConnected = !!this.remote;
-    if (this.role === 'host') {
-      // Keep the code alive so someone can join again.
-      clearInterval(this.timer);
-      this.timer = null;
-      this.remote = null;
-      this.samples = [];
-      const conn = this.conn;
-      this.conn = null;
-      if (conn) conn.close();
-    } else {
-      this.close(false);
-    }
+    clearInterval(this.timer);
+    this.timer = null;
+    this.remote = null;
+    this.samples = [];
+    if (this.role !== 'host') this.close(false);
     if (wasConnected) this.emit('lost', reason);
+  }
+
+  /** The socket to the relay closed or went quiet. */
+  dropped() {
+    this.detach();
+    if (this.closed) return;
+    if (this.pending) {
+      this.settle(UNREACHABLE);
+      return;
+    }
+    this.lost('Connection lost.');
+    if (!this.closed) {
+      // A host's room, and so its code, went with the socket.
+      this.close(false);
+      this.emit('down', 'Lost the connection to the race server.');
+    }
+  }
+
+  detach() {
+    const ws = this.ws;
+    this.ws = null;
+    if (!ws) return;
+    try {
+      ws.close();
+    } catch {
+      // Already closing.
+    }
   }
 
   close(sayBye = true) {
     if (this.closed) return;
+    // Anything sent before close() still goes out ahead of the close frame.
     if (sayBye) this.send({ t: 'bye' });
     this.closed = true;
     clearInterval(this.timer);
-    this.timer = null;
-    const peer = this.peer;
-    const conn = this.conn;
-    // Let the goodbye flush before tearing down.
-    setTimeout(
-      () => {
-        try {
-          if (conn) conn.close();
-        } catch {
-          // ignore
-        }
-        try {
-          if (peer) peer.destroy();
-        } catch {
-          // ignore
-        }
-      },
-      sayBye ? 150 : 0,
-    );
+    clearInterval(this.watchdog);
+    this.timer = this.watchdog = null;
+    this.detach();
   }
 }

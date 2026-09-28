@@ -16,10 +16,16 @@
       content="A first-person kart racer for iPad. Turn the iPad to steer; the horizon stays level."
     />
     <title>Tilt Kart</title>
+    <script>
+      // Motion sensors only work on HTTPS pages. Local addresses stay on HTTP for development.
+      if (location.protocol === 'http:' && !/^(localhost|[\d.]+|\[.*\]|.*\.local)$/.test(location.hostname)) {
+        location.replace('https:' + location.href.slice(5));
+      }
+    </script>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon-180.png" />
-    <link rel="stylesheet" href="style.css?v=fdf72b7285" />
+    <link rel="stylesheet" href="style.css?v=5b2e4dd5fb" />
   </head>
   <body data-screen="title">
     <canvas id="scene" aria-label="Race view"></canvas>
@@ -298,6 +304,6 @@
     </div>
 
     <pre id="debug" class="debug" hidden></pre>
-    <script type="module" src="game.js?v=8e65f16d12"></script>
+    <script type="module" src="game.js?v=082be49261"></script>
   </body>
 </html>

@@ -1,23 +1,17 @@
-// End-to-end check of online play: two browser pages pair with a code, race,
-// finish, rematch, and one leaves. Needs:
-//   npm run build && npx http-server public -p 8080   (static files)
-//   npm run peer-server                                (local signaling on :9000)
-//   node test/e2e/online.mjs
+// End-to-end check of online play through the relay: two browser pages pair
+// with a code (a third is turned away), race, finish, rematch, and one leaves.
+// Serves the committed build and the relay itself, or set KART_URL to test a
+// deployment (e.g. nginx + relay).   node test/e2e/online.mjs
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { startDevServer } from '../../tools/dev-server.mjs';
 
-const BASE = process.env.KART_URL || 'http://localhost:8080/';
-const URL = `${BASE}?peerhost=localhost&peerport=9000&peersecure=0`;
+const server = process.env.KART_URL ? null : await startDevServer({ port: 0, host: '127.0.0.1' });
+const URL = process.env.KART_URL || `http://127.0.0.1:${server.address().port}/`;
 const SHOTS = process.env.KART_SHOTS || '';
 
 const browser = await chromium.launch({
-  args: [
-    '--use-gl=angle',
-    '--use-angle=swiftshader',
-    '--enable-unsafe-swiftshader',
-    // Same-machine WebRTC: use plain host candidates instead of mDNS names.
-    '--disable-features=WebRtcHideLocalIpsWithMdns',
-  ],
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 });
 // Small viewports keep two software-rendered pages fast enough in CI.
 const viewport = { width: Number(process.env.KART_W) || 560, height: Number(process.env.KART_H) || 400 };
@@ -70,6 +64,22 @@ await guest.click('[data-action=join-go]');
 await waitScreen(guest, 'lobby');
 await host.waitForFunction(() => !document.getElementById('btn-host-start').disabled, null, { timeout: 10000 });
 step('guest joined; host can start');
+
+// A third player is turned away while the race has two.
+const third = await (await browser.newContext({ viewport })).newPage();
+await third.goto(URL);
+await third.click('[data-action=join]');
+await third.fill('#join-code', code);
+await third.click('[data-action=join-go]');
+await third.waitForFunction(() => document.getElementById('join-status').dataset.tone === 'bad', null, {
+  timeout: 20000,
+});
+assert.equal(
+  await third.evaluate(() => document.getElementById('join-status').textContent),
+  'That race already has two players.',
+);
+await third.context().close();
+step('third player turned away');
 await shot(host, 'online-03-host-ready');
 await shot(guest, 'online-04-guest-lobby');
 
@@ -152,4 +162,5 @@ await shot(host, 'online-09-host-after-leave');
 
 assert.equal(await screen(host), 'race');
 await browser.close();
+server?.close();
 console.log('All online checks passed.');
