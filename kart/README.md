@@ -36,7 +36,7 @@ Over SSH, one line clones the game (first time) and starts or updates everything
 git clone -q --depth 1 -b claude/kart-accelerometer-steering-yry610 https://github.com/shelbykleindesign/steamdeckhq-crankshaft-plugin ~/tilt-kart 2>/dev/null; ~/tilt-kart/kart/serve/up.sh
 ```
 
-`up.sh` pulls the latest files, fetches the tunnel token with this machine's `cloudflared` login into `serve/.env` (mode 600) the first time, and runs `docker compose up -d`. If `cloudflared` isn't logged in, it says how to fix that. Re-run it to deploy updates. nginx sends `Cache-Control: no-cache`, so browsers and Cloudflare pick up new files on the next load.
+`up.sh` pulls the latest files, fetches the tunnel token with this machine's `cloudflared` login into `serve/.env` (mode 600) the first time, and runs `docker compose up -d`. If `cloudflared` isn't logged in, it says how to fix that. Re-run it to deploy updates. `npm run build` stamps `game.js` and `style.css` in `index.html` with a content hash (`?v=…`), and `index.html` is never cached. So players get a new version on their next load, even though Cloudflare lets browsers keep those files for hours.
 
 The tunnel, its route and the DNS record live in Cloudflare (Zero Trust → Networks → Tunnels → `moto`), so nothing about the domain is configured on the Beelink.
 

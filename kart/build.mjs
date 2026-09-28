@@ -3,6 +3,7 @@
 //   npm run build        production bundle (+ third-party license notices)
 //   npm run dev          rebuild on change + serve public/ on :8080
 import * as esbuild from 'esbuild';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const serve = process.argv.includes('--serve');
@@ -29,6 +30,26 @@ if (serve) {
   const result = await ctx.rebuild();
   await ctx.dispose();
   writeNotices(result.metafile);
+  versionAssets();
+}
+
+/**
+ * Stamp game.js and style.css in index.html with a content hash. Cloudflare
+ * lets browsers keep those files for hours, but index.html always
+ * revalidates, so a changed file gets a new URL and is fetched right away.
+ */
+function versionAssets() {
+  const hash = (file) =>
+    createHash('sha256')
+      .update(readFileSync(`public/${file}`))
+      .digest('hex')
+      .slice(0, 10);
+  const html = readFileSync('public/index.html', 'utf8');
+  const next = html.replace(
+    /(src|href)="(game\.js|style\.css)(?:\?v=[0-9a-f]+)?"/g,
+    (_, attr, file) => `${attr}="${file}?v=${hash(file)}"`,
+  );
+  if (next !== html) writeFileSync('public/index.html', next);
 }
 
 /** Collect the license text of every npm package that ended up in the bundle. */
